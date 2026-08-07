@@ -1,0 +1,673 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Company Command Center — Operations</title>
+<style>
+  /* ── design tokens (dark ops-center; status colors reserved, paired with icons) ── */
+  :root{
+    --bg:#0d1117; --surface:#141a22; --surface-2:#1b2230; --surface-3:#222b3a;
+    --border:#243040; --border-2:#2f3d52;
+    --text:#e6edf3; --text-2:#9aa7b8; --text-3:#6b7889;
+    --accent:#3b82f6; --accent-2:#60a5fa; --accent-soft:rgba(59,130,246,.14);
+    --ok:#3fb950; --ok-soft:rgba(63,185,80,.13); --ok-text:#7ee39a;
+    --warn:#d29922; --warn-soft:rgba(210,153,34,.14);
+    --crit:#f85149; --crit-soft:rgba(248,81,73,.14);
+    --info:#58a6ff;
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70; /* validated categorical (dark), all-pairs safe */
+    --mono:ui-monospace,"SF Mono","Cascadia Code","Roboto Mono",Menlo,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    --r:12px; --r-sm:8px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;-webkit-font-smoothing:antialiased;line-height:1.45}
+  ::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:#2a3547;border-radius:6px}::-webkit-scrollbar-track{background:transparent}
+
+  #app{display:grid;grid-template-columns:250px 1fr;height:100vh;overflow:hidden}
+
+  /* ── sidebar ── */
+  .side{background:linear-gradient(180deg,#0f151d,#0c1119);border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0}
+  .brand{display:flex;align-items:center;gap:11px;padding:18px 18px 16px;border-bottom:1px solid var(--border)}
+  .logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--accent),#7c3aed);display:grid;place-items:center;color:#fff;font-weight:800;font-size:15px;box-shadow:0 2px 10px rgba(59,130,246,.35)}
+  .brand b{font-size:14.5px;letter-spacing:.2px;display:block}
+  .brand span{font-size:11px;color:var(--text-3)}
+  .nav{padding:10px 10px;overflow:auto;flex:1;min-height:0}
+  .navlab{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--text-3);padding:12px 10px 6px}
+  .navitem{display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:var(--r-sm);color:var(--text-2);cursor:pointer;font-weight:500;position:relative;user-select:none}
+  .navitem:hover{background:var(--surface);color:var(--text)}
+  .navitem.on{background:var(--accent-soft);color:#dbe9ff}
+  .navitem.on::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:3px;border-radius:3px;background:var(--accent)}
+  .navitem .ic{width:18px;text-align:center;font-size:15px;opacity:.9}
+  .navitem .nm{flex:1}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px var(--ok-soft)}
+  .dot.warn{background:var(--warn);box-shadow:0 0 0 3px var(--warn-soft)}
+  .dot.crit{background:var(--crit);box-shadow:0 0 0 3px var(--crit-soft);animation:pulse 1.4s infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 3px var(--crit-soft)}50%{box-shadow:0 0 0 6px rgba(248,81,73,.05)}}
+  .sidefoot{border-top:1px solid var(--border);padding:12px 14px;font-size:11.5px;color:var(--text-3)}
+  .sidefoot .agf{display:flex;align-items:center;gap:8px;color:var(--text-2)}
+
+  /* ── main ── */
+  .main{display:flex;flex-direction:column;min-width:0;min-height:0}
+  .topbar{display:flex;align-items:center;gap:16px;padding:13px 22px;border-bottom:1px solid var(--border);background:rgba(13,17,23,.7);backdrop-filter:blur(6px)}
+  .topbar h1{font-size:15px;margin:0;font-weight:650;letter-spacing:.2px}
+  .topbar .sub{color:var(--text-3);font-size:12px;margin-left:-8px}
+  .spacer{flex:1}
+  .statuspill{display:inline-flex;align-items:center;gap:8px;padding:6px 13px;border-radius:999px;font-weight:650;font-size:12.5px;border:1px solid}
+  .statuspill.ok{color:var(--ok-text);background:var(--ok-soft);border-color:rgba(63,185,80,.35)}
+  .statuspill.warn{color:#f0c85f;background:var(--warn-soft);border-color:rgba(210,153,34,.4)}
+  .statuspill.crit{color:#ff8983;background:var(--crit-soft);border-color:rgba(248,81,73,.4)}
+  .metasm{font-size:12px;color:var(--text-2);font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:6px}
+  .env{font-size:11px;font-weight:700;letter-spacing:.06em;color:#f0c85f;border:1px solid rgba(210,153,34,.4);padding:3px 8px;border-radius:6px;background:var(--warn-soft)}
+  .agfchip{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;font-size:12px;font-weight:600;background:var(--surface-2);border:1px solid var(--border-2);color:var(--text-2)}
+  .agfchip.on{color:#dbe9ff;border-color:rgba(59,130,246,.5);background:var(--accent-soft)}
+  .agfchip .spin{width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);animation:pulse2 1.1s infinite}
+  @keyframes pulse2{0%,100%{opacity:1}50%{opacity:.35}}
+
+  .view{padding:22px;overflow:auto;flex:1;min-height:0}
+  .viewhead{display:flex;align-items:baseline;gap:12px;margin:0 2px 16px}
+  .viewhead h2{margin:0;font-size:20px;font-weight:680;letter-spacing:-.2px}
+  .viewhead .src{font-size:12px;color:var(--text-3)}
+
+  /* ── grid + cards ── */
+  .grid{display:grid;gap:14px}
+  .g2{grid-template-columns:repeat(2,1fr)}.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}.g6{grid-template-columns:repeat(6,1fr)}
+  @media(max-width:1350px){.g6{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:1050px){.g3,.g2{grid-template-columns:1fr}.g4{grid-template-columns:1fr}}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:15px 16px;min-width:0;position:relative;overflow:hidden}
+  .card.span2{grid-column:span 2}@media(max-width:1050px){.card.span2{grid-column:auto}}
+  .card h3{margin:0 0 2px;font-size:12.5px;font-weight:600;color:var(--text-2);display:flex;align-items:center;gap:8px}
+  .card .hd{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+
+  /* KPI tile */
+  .kpi .val{font-family:var(--mono);font-size:27px;font-weight:600;letter-spacing:-.5px;font-variant-numeric:tabular-nums;line-height:1.1}
+  .kpi .unit{font-size:14px;color:var(--text-3);font-weight:500;margin-left:2px}
+  .kpi .lab{font-size:12px;color:var(--text-2);margin-bottom:6px;font-weight:500}
+  .kpi .delta{font-size:11.5px;font-weight:600;display:inline-flex;gap:3px;align-items:center;margin-top:7px;font-variant-numeric:tabular-nums}
+  .kpi .delta.up{color:var(--ok)}.kpi .delta.down{color:var(--crit)}.kpi .delta.flat{color:var(--text-3)}
+  .kpi .spark{position:absolute;right:0;bottom:0;width:58%;height:42px;opacity:.9;pointer-events:none}
+  .stripe{position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--ok)}
+  .stripe.warn{background:var(--warn)}.stripe.crit{background:var(--crit)}.stripe.acc{background:var(--accent)}
+
+  /* status pill */
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:650;padding:3px 9px;border-radius:999px;white-space:nowrap}
+  .pill.ok{color:var(--ok-text);background:var(--ok-soft)}
+  .pill.warn{color:#f0c85f;background:var(--warn-soft)}
+  .pill.crit{color:#ff8983;background:var(--crit-soft)}
+  .pill.info{color:#9dc7ff;background:var(--accent-soft)}
+  .pill .pd{width:7px;height:7px;border-radius:50%;background:currentColor}
+
+  /* chart */
+  .chartwrap{position:relative;width:100%}
+  svg.area{width:100%;display:block;overflow:visible}
+  .chart-y{position:absolute;left:0;top:0;bottom:18px;width:100%;pointer-events:none}
+  .yl{position:absolute;left:2px;font-size:10px;color:var(--text-3);font-variant-numeric:tabular-nums;transform:translateY(-50%)}
+  .xl{font-size:10px;color:var(--text-3)}
+  .chartfoot{display:flex;justify-content:space-between;color:var(--text-3);font-size:10.5px;margin-top:4px;font-variant-numeric:tabular-nums}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--text-2);margin-top:8px}
+  .legend i{width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:6px;vertical-align:middle}
+
+  /* service grid */
+  .svc{display:flex;align-items:center;gap:11px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface-2)}
+  .svc.bad{border-color:rgba(248,81,73,.4);background:var(--crit-soft)}
+  .svc.warnb{border-color:rgba(210,153,34,.35);background:var(--warn-soft)}
+  .svc .nm{font-weight:600;font-size:13px}.svc .mt{font-size:11px;color:var(--text-3);font-variant-numeric:tabular-nums}
+  .svc .rt{margin-left:auto;text-align:right}
+
+  /* gauge */
+  .gauge{display:flex;align-items:center;gap:16px}
+  .gnum{font-family:var(--mono);font-size:24px;font-weight:600;font-variant-numeric:tabular-nums}
+
+  /* bars */
+  .bar{display:grid;grid-template-columns:120px 1fr 60px;align-items:center;gap:10px;font-size:12px;padding:4px 0}
+  .bar .track{height:9px;border-radius:5px;background:var(--surface-3);overflow:hidden}
+  .bar .fill{height:100%;border-radius:5px;background:var(--accent);transition:width .5s ease}
+  .bar .num{text-align:right;font-family:var(--mono);color:var(--text-2);font-variant-numeric:tabular-nums;font-size:11.5px}
+
+  /* alerts / feed */
+  .row{display:flex;align-items:flex-start;gap:11px;padding:10px 2px;border-bottom:1px solid var(--border)}
+  .row:last-child{border-bottom:0}
+  .row .ic{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-size:12px;flex:none;margin-top:1px}
+  .ic.ok{background:var(--ok-soft);color:var(--ok-text)}.ic.warn{background:var(--warn-soft);color:#f0c85f}.ic.crit{background:var(--crit-soft);color:#ff8983}.ic.acc{background:var(--accent-soft);color:#9dc7ff}
+  .row .tx{flex:1;min-width:0}.row .tx b{font-weight:600;font-size:13px}.row .tx p{margin:2px 0 0;color:var(--text-2);font-size:12px}
+  .row .tm{color:var(--text-3);font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap;margin-top:2px}
+  .feed{max-height:340px;overflow:auto}
+  .empty{color:var(--text-3);font-size:12.5px;text-align:center;padding:26px 0}
+  .banner{display:flex;align-items:center;gap:13px;padding:13px 16px;border-radius:var(--r);border:1px solid;margin-bottom:14px}
+  .banner.ok{background:var(--ok-soft);border-color:rgba(63,185,80,.3)}
+  .banner.warn{background:var(--warn-soft);border-color:rgba(210,153,34,.4)}
+  .banner.crit{background:var(--crit-soft);border-color:rgba(248,81,73,.4)}
+  .banner .bic{font-size:20px}.banner b{font-size:14px}.banner p{margin:2px 0 0;color:var(--text-2);font-size:12.5px}
+
+  .tag{font-size:10.5px;font-weight:700;letter-spacing:.05em;padding:2px 7px;border-radius:5px;text-transform:uppercase}
+  .tag.real{color:#ff8983;background:var(--crit-soft)}.tag.syn{color:var(--text-3);background:var(--surface-3)}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .muted{color:var(--text-3)}
+
+  #tooltip{position:fixed;z-index:50;pointer-events:none;background:#0b0f14;border:1px solid var(--border-2);border-radius:8px;padding:8px 11px;font-size:12px;box-shadow:0 6px 24px rgba(0,0,0,.5);display:none;font-variant-numeric:tabular-nums}
+  #tooltip .tt-t{color:var(--text-3);font-size:10.5px;margin-bottom:3px}
+  #tooltip .tt-v{font-family:var(--mono);font-weight:600;font-size:13px}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside class="side">
+    <div class="brand">
+      <div class="logo">CC</div>
+      <div><b>Command Center</b><span>Enterprise Operations</span></div>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <div class="sidefoot">
+      <div class="agf"><span class="dot" id="agf-dot"></span><span id="agf-foot">AgentForge · monitoring</span></div>
+      <div style="margin-top:6px" id="incfoot">No active incidents</div>
+    </div>
+  </aside>
+  <main class="main">
+    <header class="topbar">
+      <h1 id="tb-title">Overview</h1>
+      <span class="sub" id="tb-sub"></span>
+      <span class="spacer"></span>
+      <span class="agfchip" id="agfchip"><span class="dot" id="agf-ind"></span><span id="agf-lab">AgentForge idle</span></span>
+      <span class="statuspill ok" id="gstatus"><span class="pd" style="width:7px;height:7px;border-radius:50%;background:currentColor"></span><span id="gstatus-t">Operational</span></span>
+      <span class="env">PRODUCTION</span>
+      <span class="metasm"><span id="clock">--:--:--</span></span>
+    </header>
+    <section class="view" id="view"></section>
+  </main>
+</div>
+<div id="tooltip"></div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const lerp=(a,b,t)=>a+(b-a)*t;
+const rnd=(a,b)=>a+Math.random()*(b-a);
+const fmt=(n,d=0)=>Number(n).toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d});
+const money=n=>n>=1e6?'$'+(n/1e6).toFixed(2)+'M':n>=1e3?'$'+(n/1e3).toFixed(1)+'k':'$'+fmt(n);
+const dur=s=>s>=3600?(s/3600).toFixed(1)+'h':s>=60?Math.round(s/60)+'m':Math.round(s)+'s';
+// CSS var() does NOT resolve inside SVG presentation attributes — resolve to hex for stroke/fill.
+const rootCS=getComputedStyle(document.documentElement);
+function hexOf(c){if(typeof c==='string'&&c.startsWith('var(')){const n=c.slice(4,-1).trim();return (rootCS.getPropertyValue(n).trim())||c;}return c;}
+
+/* ── the model: flag state + live rolling series (spike on fault, heal on clear) ── */
+const N=60;                       // points per series
+const SERIES={}, CUR={};
+function track(name,init){SERIES[name]=Array.from({length:N},()=>init);CUR[name]=init;}
+[['pay_err',.2],['pay_p95',190],['req_rate',1240],['vend_err',.1],['sync_lag',45],['deals_min',9],
+ ['sync_err',0],['inflow',7],['spend_rate',2000],['auth_fail',.2],['alert_ct',1],['dlq',0],
+ ['open_tk',12],['sla',2]].forEach(([n,v])=>track(n,v));
+
+let FLAGS={}, everBad={}, feed=[], lastFlags=null, agfState='idle', agfSince=0, connected=true;
+const FAULTS=['crm_sync_stalled','crm_vendor_down','crm_credential_expired','monitor_alert_storm','crm_delivery_stuck','account_mismatch',
+              'code_pipeline','code_sla','code_finops','code_access','code_accent'];
+const CODE_FAULTS=['code_pipeline','code_sla','code_finops','code_access','code_accent'];   // L3 code defects (fixed via a PR, not an L2 action)
+
+function targets(F){
+  const syncFail=F.crm_vendor_down||F.crm_credential_expired;
+  const anyRev=F.crm_sync_stalled||syncFail||F.crm_delivery_stuck;
+  const anyInc=FAULTS.some(f=>F[f]);
+  // support-affecting incidents only (runtime faults + the SLA code defect) — NOT the other code defects,
+  // which live on Revenue/Cloud/Security. Keeps the Support surface's ticket/SLA load consistent with domHealth.
+  const supInc=FAULTS.some(f=>F[f]&&!f.startsWith('code_'))||F.code_sla;
+  return {
+    pay_err:  F.monitor_alert_storm?14:.2,
+    pay_p95:  F.monitor_alert_storm?2200:190,
+    req_rate: F.monitor_alert_storm?880:1240,
+    vend_err: F.crm_vendor_down?11:.1,
+    sync_lag: F.crm_sync_stalled?2700:45,
+    deals_min:F.crm_sync_stalled?0:9,
+    sync_err: syncFail?8:0,
+    inflow:   supInc?18:7,
+    spend_rate:F.monitor_alert_storm?2170:2000,
+    auth_fail:F.crm_credential_expired?6:.2,
+    alert_ct: F.monitor_alert_storm?18:1,
+    dlq:      F.crm_delivery_stuck?1:0,
+    open_tk:  12+(supInc?1:0)+(F.crm_delivery_stuck?1:0),
+    sla:      2+(supInc?1:0),
+    _syncFail:syncFail,_anyRev:anyRev,_anyInc:anyInc,_supInc:supInc
+  };
+}
+function advance(F){
+  const t=targets(F);
+  const step=(n,noiseFrac,intg)=>{
+    let tv=t[n]; let c=CUR[n];
+    c=lerp(c,tv,.34);
+    const amp=Math.max(Math.abs(tv),1)*noiseFrac;
+    c+=rnd(-amp,amp);
+    if(intg) c=Math.round(clamp(c,0,1e9));
+    else c=Math.max(0,c);
+    CUR[n]=c; SERIES[n].push(c); if(SERIES[n].length>N)SERIES[n].shift();
+  };
+  step('pay_err',.06);step('pay_p95',.04);step('req_rate',.02);step('vend_err',.08);
+  step('sync_lag',.01);step('deals_min',.14);step('sync_err',.05);step('inflow',.12);
+  step('spend_rate',.03);step('auth_fail',.09);
+  // discrete / snapped
+  ['alert_ct','dlq','open_tk','sla'].forEach(n=>{CUR[n]=t[n];SERIES[n].push(t[n]);if(SERIES[n].length>N)SERIES[n].shift();});
+  return t;
+}
+
+/* ── domain health from flags ── */
+function domHealth(F){
+  const sf=F.crm_vendor_down||F.crm_credential_expired;
+  return {
+    overview:'',
+    system:  F.monitor_alert_storm?'crit':F.crm_vendor_down?'warn':'ok',
+    revenue: sf?'crit':(F.crm_sync_stalled||F.crm_delivery_stuck||F.account_mismatch||F.code_pipeline)?'warn':'ok',
+    support: (FAULTS.some(f=>F[f]&&!f.startsWith('code_'))||F.code_sla)?'warn':'ok',
+    cloud:   F.code_finops?'warn':'ok',
+    security:F.crm_credential_expired?'crit':F.code_access?'warn':'ok'
+  };
+}
+const worst=h=>['crit','warn','ok'].find(l=>Object.values(h).includes(l))||'ok';
+
+/* ── incident copy per fault ── */
+const INC={
+  monitor_alert_storm:{dom:'System Health',sev:'crit',raise:'Payments API error rate 14% · p95 latency 2.2s — 1 real outage buried in 18 alerts',fix:'Ranked by real status (not volume); the genuine payments-api outage was handled and the synthetic noise suppressed.'},
+  crm_vendor_down:{dom:'Revenue',sev:'warn',raise:'Twenty CRM vendor API returning 5xx — upstream (their-side) outage',fix:'Attributed to the vendor from the error code; sync held/queued and the vendor was engaged — no our-side change.'},
+  crm_credential_expired:{dom:'Access & Security',sev:'crit',raise:'Twenty CRM integration credential expired — 401s on every sync',fix:'Rotated the expired credential (previewed + approved); the old key is rejected and sync resumed.'},
+  crm_sync_stalled:{dom:'Revenue',sev:'warn',raise:'CRM deals sync stalled — data 45m stale while the status check reads green',fix:'Detected on freshness (not job status); re-ran the idempotent sync and confirmed the data is fresh again.'},
+  crm_delivery_stuck:{dom:'Revenue',sev:'warn',raise:'1 outbound delivery dead-lettered — account ACME-4021 stuck while others flow',fix:'Replayed just that one dead-lettered item (not the batch) and confirmed it left the queue.'},
+  account_mismatch:{dom:'Revenue',sev:'warn',raise:'1 account\'s stored balance disagrees with the system of record — ACC-4471 off by 150,000 while the portfolio total reads normal',fix:'Pulled the account ID from the ticket, diffed stored vs authoritative, and corrected just that one record — no other accounts touched.'},
+  // L3 CODE DEFECTS — real bugs in the commandcenter/*.py backend, fixed by the L3 lane (reproduce → fix → PR → deploy), not an L2 action.
+  code_pipeline:{dom:'Revenue',sev:'warn',kind:'code',raise:'Code defect · pipeline.py — pipeline value overstated: multi-currency deals counted once per currency ($2.04M shown vs $1.84M actual)',fix:'AgentForge reproduced it, fixed the rollup to count each deal once, ran the tests, and opened a PR — the value corrects on deploy.'},
+  code_sla:{dom:'Support',sev:'warn',kind:'code',raise:'Code defect · sla.py — a ticket exactly at the SLA warning threshold isn\'t flagged at-risk, so a breach slipped the early warning',fix:'AgentForge reproduced it, fixed the boundary check (< → <=), ran the tests, and opened a PR.'},
+  code_finops:{dom:'Cloud Spend',sev:'warn',kind:'code',raise:'Code defect · finops.py — the month-end projection over-shoots early in the month, firing a false "over budget" alert',fix:'AgentForge reproduced it, fixed the elapsed-days divisor, ran the tests, and opened a PR.'},
+  code_access:{dom:'Access & Security',sev:'warn',kind:'code',raise:'Code defect · access.py — a departed employee who was recently active isn\'t flagged in the access review',fix:'AgentForge reproduced it, fixed the and→or condition, ran the tests, and opened a PR.'},
+  code_accent:{dom:'System health',sev:'warn',kind:'code',raise:'Code defect · theme.py — every HEALTHY status signal (the Operational pill, the green service-health dots, the ok KPI stripes) renders the danger red (#f85149) instead of the brand green, so a fully healthy system reads as critical',fix:'AgentForge reproduced it (test_theme.py), restored the healthy green, ran the tests, and opened a PR — the health indicators repaint green on deploy.'}
+};
+function pushFeed(kind,dom,text){
+  feed.unshift({kind,dom,text,t:new Date()}); if(feed.length>40)feed.pop();
+}
+
+/* ── charts (measured pixel space → crisp, undistorted) ── */
+const CH={}; // elId -> {pts, series, opts}
+function drawArea(svg,series,opts){
+  const w=svg.clientWidth||600, h=svg.clientHeight||130, pl=6,pr=6,pt=8,pb=6;
+  svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
+  const iw=w-pl-pr, ih=h-pt-pb;
+  const data=series.slice(-N);
+  let mn=Math.min(...data), mx=Math.max(...data);
+  if(opts.min!=null)mn=Math.min(mn,opts.min); if(opts.max!=null)mx=Math.max(mx,opts.max);
+  if(opts.zero)mn=0; const pad=(mx-mn)*.15||1; mx+=pad; mn=Math.max(0,mn-pad*.4); if(mx-mn<1e-6)mx=mn+1;
+  const X=i=>pl+iw*(i/(data.length-1)), Y=v=>pt+ih*(1-(v-mn)/(mx-mn));
+  const pts=data.map((v,i)=>[X(i),Y(v)]);
+  const line=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+  const area=`M${pts[0][0].toFixed(1)} ${(pt+ih).toFixed(1)} `+pts.map(p=>'L'+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ')+` L${pts[pts.length-1][0].toFixed(1)} ${(pt+ih).toFixed(1)} Z`;
+  const col=hexOf(opts.color||'var(--accent)');
+  const grid=[.25,.5,.75].map(f=>`<line x1="${pl}" x2="${w-pr}" y1="${(pt+ih*f).toFixed(1)}" y2="${(pt+ih*f).toFixed(1)}" stroke="rgba(255,255,255,.05)" stroke-width="1"/>`).join('');
+  const end=pts[pts.length-1];
+  svg.querySelector('.gg').innerHTML=grid;
+  const aa=svg.querySelector('.aa');aa.setAttribute('d',area);aa.setAttribute('fill',col);aa.setAttribute('fill-opacity','.14');
+  const ll=svg.querySelector('.ll');ll.setAttribute('d',line);ll.setAttribute('stroke',col);
+  const e=svg.querySelector('.ee'); e.setAttribute('cx',end[0]);e.setAttribute('cy',end[1]);e.setAttribute('fill',col);
+  CH[svg.id]={pts,data,opts:{...opts,mn,mx,pl,pr,pt,ih,X,Y},col};
+}
+function areaSVG(id,height){
+  return `<div class="chartwrap"><svg class="area" id="${id}" style="height:${height||130}px"
+     onmousemove="chartHover(event,'${id}')" onmouseleave="chartLeave('${id}')">
+     <g class="gg"></g>
+     <path class="aa" stroke="none"></path>
+     <path class="ll" fill="none" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>
+     <line class="cx" y1="0" y2="100%" stroke="rgba(255,255,255,.25)" stroke-width="1" style="display:none"></line>
+     <circle class="hd" r="4" fill="#fff" stroke-width="2" style="display:none"></circle>
+     <circle class="ee" r="3.2" stroke="#0d1117" stroke-width="1.5"></circle>
+   </svg></div>`;
+}
+function fillFor(){return null;} // legacy arg; drawArea sets the fill directly now
+function chartHover(ev,id){
+  const c=CH[id]; if(!c)return; const svg=$(id); const r=svg.getBoundingClientRect();
+  const x=ev.clientX-r.left; const o=c.opts;
+  let bi=0,bd=1e9; c.pts.forEach((p,i)=>{const d=Math.abs(p[0]/svg.clientWidth*r.width-x);if(d<bd){bd=d;bi=i}});
+  const p=c.pts[bi];
+  const cx=svg.querySelector('.cx'), hd=svg.querySelector('.hd');
+  cx.setAttribute('x1',p[0]);cx.setAttribute('x2',p[0]);cx.style.display='';
+  hd.setAttribute('cx',p[0]);hd.setAttribute('cy',p[1]);hd.setAttribute('stroke',c.col);hd.style.display='';
+  const tt=$('tooltip'); tt.style.display='block';
+  const ago=(c.data.length-1-bi); tt.innerHTML=`<div class="tt-t">${ago===0?'now':'−'+(ago*2)+'s'}</div><div class="tt-v" style="color:${c.col}">${o.fmt?o.fmt(c.data[bi]):fmt(c.data[bi],1)}</div>`;
+  tt.style.left=Math.min(ev.clientX+14,innerWidth-140)+'px'; tt.style.top=(ev.clientY-10)+'px';
+}
+function chartLeave(id){const svg=$(id);if(!svg)return;svg.querySelector('.cx').style.display='none';svg.querySelector('.hd').style.display='none';$('tooltip').style.display='none';}
+
+function sparkSVG(series,col){
+  const d=series.slice(-30),mn=Math.min(...d),mx=Math.max(...d)+1e-6,w=140,h=42;
+  const pts=d.map((v,i)=>`${(i/(d.length-1)*w).toFixed(1)},${(h-2-(h-4)*(v-mn)/(mx-mn||1)).toFixed(1)}`).join(' ');
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="${hexOf(col)}" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
+}
+function kpi(lab,val,unit,{state='ok',delta,spark,sparkCol,stripe='acc'}={}){
+  const dv=delta?`<div class="delta ${delta.dir}">${delta.dir==='up'?'▲':delta.dir==='down'?'▼':'—'} ${delta.txt}</div>`:'';
+  const sp=spark?sparkSVG(spark,sparkCol||'var(--accent)'):'';
+  return `<div class="card kpi"><div class="stripe ${stripe}"></div><div class="lab">${lab}</div>
+    <div class="val">${val}<span class="unit">${unit||''}</span></div>${dv}${sp}</div>`;
+}
+function statPill(state,txt){const m={ok:'ok',warn:'warn',crit:'crit',info:'info'}[state]||'ok';return `<span class="pill ${m}"><span class="pd"></span>${txt}</span>`;}
+function iconFor(s){return {ok:'✓',warn:'!',crit:'✕',acc:'◆'}[s]||'•'};
+function chartCard(title,right,id,foot,height){
+  return `<div class="card span2"><div class="hd"><h3>${title}</h3><div>${right||''}</div></div>
+    ${areaSVG(id,height)}<div class="chartfoot"><span>${foot||''}</span><span id="${id}-cur"></span></div></div>`;
+}
+
+/* ── tabs ── */
+const TABS=[
+  {k:'overview',nm:'Overview',ic:'▦',src:'all domains'},
+  {k:'system',nm:'System Health',ic:'♥',src:'Uptime Kuma'},
+  {k:'revenue',nm:'Revenue / Deals',ic:'▲',src:'Twenty CRM'},
+  {k:'support',nm:'Support',ic:'✉',src:'Freshdesk'},
+  {k:'cloud',nm:'Cloud Spend',ic:'☁',src:'FinOps'},
+  {k:'security',nm:'Access & Security',ic:'⚿',src:'IAM'}
+];
+let active='overview';
+
+function skeleton(k){
+  const F=FLAGS;
+  if(k==='overview') return ov_sk();
+  if(k==='system')   return sys_sk();
+  if(k==='revenue')  return rev_sk();
+  if(k==='support')  return sup_sk();
+  if(k==='cloud')    return cloud_sk();
+  if(k==='security') return sec_sk();
+}
+
+/* Overview */
+function ov_sk(){
+  return `<div id="ov-banner"></div>
+  <div class="grid g6" style="margin-bottom:14px" id="ov-kpis"></div>
+  <div class="grid g3" style="margin-bottom:14px">
+    <div class="card span2">${''}<div class="hd"><h3>Domain health</h3><span class="muted" id="ov-dh-sum"></span></div><div id="ov-domains" class="grid" style="grid-template-columns:1fr 1fr;gap:10px"></div></div>
+    <div class="card"><div class="hd"><h3>Request throughput</h3><span id="ov-rr-cur" class="mono muted"></span></div>${areaSVG('ov-rr',96)}</div>
+  </div>
+  <div class="grid g2">
+    <div class="card"><div class="hd"><h3>Live incident timeline</h3><span class="muted" id="ov-feedn"></span></div><div class="feed" id="ov-feed"></div></div>
+    <div class="card"><div class="hd"><h3>Error rate · Payments API</h3><span id="ov-err-cur" class="mono muted"></span></div>${areaSVG('ov-err',150)}<div class="legend"><span><i style="background:var(--crit)"></i>error rate (%)</span></div></div>
+  </div>`;
+}
+function ov_up(){
+  const F=FLAGS,h=domHealth(F),t=targets(F);
+  const gs=worst(h), any=t._anyInc;
+  const upPct=(100-(F.monitor_alert_storm?0.4:0)-(F.crm_vendor_down?0.15:0)).toFixed(2);
+  $('ov-kpis').innerHTML=[
+    kpi('Global uptime',upPct,'%',{state:gs,stripe:gs==='ok'?'acc':gs,spark:SERIES.req_rate,sparkCol:'var(--accent)'}),
+    kpi('Pipeline value',money(FLAGS.code_pipeline?2040000:1840000),'',{state:FLAGS.code_pipeline?'warn':undefined,stripe:FLAGS.code_pipeline?'warn':'acc'}),
+    kpi('Open tickets',fmt(CUR.open_tk),'',{state:t.sla>2?'warn':'ok',stripe:t._supInc?'warn':'acc'}),
+    kpi('Cloud spend',(CUR.spend_rate*24/1000).toFixed(1)+'k','/day',{stripe:'acc'}),
+    kpi('Expired creds',fmt(F.crm_credential_expired?1:0),'',{state:F.crm_credential_expired?'crit':'ok',stripe:F.crm_credential_expired?'crit':'acc'}),
+    kpi('Dead-letter Q',fmt(CUR.dlq),'',{state:CUR.dlq>0?'warn':'ok',stripe:CUR.dlq>0?'warn':'acc'})
+  ].join('');
+  const bn=$('ov-banner');
+  if(F.monitor_alert_storm){bn.innerHTML=banner('crit','Major incident in progress','A real service outage is being handled amid an alert storm. AgentForge is engaged.');}
+  else if(any){bn.innerHTML=banner('warn',(activeIncidents().length)+' active incident'+(activeIncidents().length>1?'s':'')+' — AgentForge engaged','Detected from live telemetry. Follow it through the AgentForge console; this dashboard heals when it resolves.');}
+  else{bn.innerHTML=banner('ok','All systems operational','No active incidents. Every domain is within its SLOs.');}
+  $('ov-dh-sum').textContent=Object.values(h).filter(x=>x==='crit'||x==='warn').length+' need attention';
+  $('ov-domains').innerHTML=TABS.slice(1).map(tb=>{const s=h[tb.k];return `<div class="svc ${s==='crit'?'bad':s==='warn'?'warnb':''}"><span class="ic ${s}" style="width:22px;height:22px;border-radius:6px;display:grid;place-items:center">${iconFor(s)}</span><div><div class="nm">${tb.nm}</div><div class="mt">${tb.src}</div></div><div class="rt">${statPill(s,s==='ok'?'Healthy':s==='warn'?'Degraded':'Incident')}</div></div>`}).join('');
+  drawArea($('ov-rr'),SERIES.req_rate,{color:'var(--accent)',fill:fillFor('ov-rr'),fmt:v=>fmt(v)+' rpm'}); $('ov-rr').style.color='var(--accent)';
+  drawArea($('ov-err'),SERIES.pay_err,{color:'var(--crit)',fill:fillFor('ov-err'),zero:true,fmt:v=>v.toFixed(2)+'%'}); $('ov-err').style.color='var(--crit)';
+  $('ov-rr-cur').textContent=fmt(CUR.req_rate)+' rpm'; $('ov-err-cur').textContent=CUR.pay_err.toFixed(2)+'%';
+  renderFeed('ov-feed'); $('ov-feedn').textContent=feed.length+' events';
+}
+function banner(s,t,p){return `<div class="banner ${s}"><span class="bic">${s==='crit'?'🔴':s==='warn'?'🟠':'🟢'}</span><div><b>${t}</b><p>${p}</p></div></div>`;}
+
+/* System Health */
+function sys_sk(){
+  return `<div class="grid g4" style="margin-bottom:14px" id="sys-kpis"></div>
+  <div class="grid g2" style="margin-bottom:14px">
+    <div class="card"><div class="hd"><h3>Error rate · Payments API</h3><span id="sys-err-cur" class="mono muted"></span></div>${areaSVG('sys-err',150)}</div>
+    <div class="card"><div class="hd"><h3>p95 latency · Payments API</h3><span id="sys-p95-cur" class="mono muted"></span></div>${areaSVG('sys-p95',150)}</div>
+  </div>
+  <div class="grid g2">
+    <div class="card"><div class="hd"><h3>Service status</h3><span class="muted" id="sys-svc-sum"></span></div><div class="grid" style="grid-template-columns:1fr 1fr;gap:10px" id="sys-svcs"></div></div>
+    <div class="card"><div class="hd"><h3>Active alerts</h3><span class="muted" id="sys-al-sum"></span></div><div class="feed" id="sys-alerts"></div></div>
+  </div>`;
+}
+function sys_up(){
+  const F=FLAGS,t=targets(F);
+  $('sys-kpis').innerHTML=[
+    kpi('Services up',(F.monitor_alert_storm?7:F.crm_vendor_down?7:8)+'/8','',{state:F.monitor_alert_storm||F.crm_vendor_down?'crit':'ok',stripe:F.monitor_alert_storm||F.crm_vendor_down?'crit':'acc'}),
+    kpi('Error rate',CUR.pay_err.toFixed(2),'%',{state:CUR.pay_err>2?'crit':'ok',spark:SERIES.pay_err,sparkCol:'var(--crit)',stripe:CUR.pay_err>2?'crit':'acc'}),
+    kpi('p95 latency',fmt(CUR.pay_p95),'ms',{state:CUR.pay_p95>800?'crit':'ok',spark:SERIES.pay_p95,sparkCol:'var(--warn)',stripe:CUR.pay_p95>800?'crit':'acc'}),
+    kpi('Active alerts',fmt(CUR.alert_ct),'',{state:CUR.alert_ct>3?'crit':'ok',stripe:CUR.alert_ct>3?'crit':'acc'})
+  ].join('');
+  drawArea($('sys-err'),SERIES.pay_err,{color:'var(--crit)',fill:fillFor('sys-err'),zero:true,fmt:v=>v.toFixed(2)+'%'});$('sys-err').style.color='var(--crit)';
+  drawArea($('sys-p95'),SERIES.pay_p95,{color:'var(--warn)',fill:fillFor('sys-p95'),fmt:v=>fmt(v)+' ms'});$('sys-p95').style.color='var(--warn)';
+  $('sys-err-cur').textContent=CUR.pay_err.toFixed(2)+'%';$('sys-p95-cur').textContent=fmt(CUR.pay_p95)+' ms';
+  const svcs=[
+    ['payments-api',F.monitor_alert_storm?'crit':'ok',F.monitor_alert_storm?'DOWN · 502':'99.98%'],
+    ['crm-sync-connector',F.crm_sync_stalled?'warn':(F.crm_credential_expired?'crit':'ok'),F.crm_credential_expired?'401 auth':F.crm_sync_stalled?'stale':'99.99%'],
+    ['twenty-crm-vendor',F.crm_vendor_down?'crit':'ok',F.crm_vendor_down?'5xx · vendor':'99.95%'],
+    ['checkout-web','ok','100%'],['inventory-svc','ok','99.97%'],
+    ['support-desk','ok','99.99%'],['billing-svc','ok','100%'],['identity-svc',F.crm_credential_expired?'warn':'ok',F.crm_credential_expired?'auth errs':'99.99%']
+  ];
+  $('sys-svcs').innerHTML=svcs.map(([n,s,m])=>`<div class="svc ${s==='crit'?'bad':s==='warn'?'warnb':''}"><span class="dot ${s==='ok'?'':s}"></span><div><div class="nm mono">${n}</div><div class="mt">uptime ${m}</div></div><div class="rt">${statPill(s,s==='ok'?'Operational':s==='warn'?'Degraded':'Down')}</div></div>`).join('');
+  $('sys-svc-sum').textContent=svcs.filter(s=>s[1]!=='ok').length+' impacted';
+  const al=[];
+  if(F.monitor_alert_storm){al.push(['crit','payments-api','Service DOWN — HTTP 502, error rate 14%, 3 retries failed','REAL']);for(let i=0;i<5;i++)al.push(['warn','synthetic-check-'+(i+7),'p95 above canary threshold (flapping)','SYN']);}
+  if(F.crm_vendor_down)al.push(['crit','twenty-crm-vendor','Upstream 503 Service Unavailable — vendor outage','REAL']);
+  if(F.crm_credential_expired)al.push(['warn','crm-sync-connector','Elevated 401 Unauthorized on /rest/sync','REAL']);
+  $('sys-alerts').innerHTML=al.length?al.map(([s,svc,m,tg])=>`<div class="row"><div class="ic ${s}">${iconFor(s)}</div><div class="tx"><b class="mono">${svc}</b> <span class="tag ${tg==='REAL'?'real':'syn'}">${tg==='REAL'?'real':'synthetic'}</span><p>${m}</p></div></div>`).join(''):`<div class="empty">✓ No active alerts — all monitors green</div>`;
+  $('sys-al-sum').textContent=F.monitor_alert_storm?'18 firing · 1 real':(al.length+' firing');
+}
+
+/* Revenue */
+// The open deals BEHIND the Pipeline value — the visible PROOF the number is right/wrong. A multi-currency deal
+// (ccy.length>1) is summed once PER CURRENCY by the buggy pipeline.py rollup, so it appears twice while the
+// code_pipeline defect is armed and collapses to one row once the fix deploys. Unique total = $1.84M; the three
+// double-counted deals add $200k → $2.04M (matches the KPI exactly, so the audience can add it up themselves).
+const PIPE_DEALS=[
+  {id:'ACME-1001',  name:'Acme Corp · Q3 expansion',  usd:100000, ccy:['USD','EUR']},
+  {id:'GLOBEX-2044',name:'Globex · annual renewal',   usd:60000,  ccy:['USD','GBP']},
+  {id:'INITECH-330',name:'Initech · new logo',        usd:40000,  ccy:['USD','JPY']},
+  {id:'HOOLI-4110', name:'Hooli · platform upsell',   usd:820000, ccy:['USD']},
+  {id:'STARK-5001', name:'Stark Industries · 3-yr',   usd:520000, ccy:['USD']},
+  {id:'WAYNE-6200', name:'Wayne Enterprises · pilot', usd:300000, ccy:['USD']},
+];
+function rev_sk(){
+  return `<div class="grid g4" style="margin-bottom:14px" id="rev-kpis"></div>
+  <div class="grid g2" style="margin-bottom:14px">
+    <div class="card"><div class="hd"><h3>Deals synced / min</h3><span id="rev-ds-cur" class="mono muted"></span></div>${areaSVG('rev-ds',150)}</div>
+    <div class="card"><div class="hd"><h3>Sync error rate</h3><span id="rev-se-cur" class="mono muted"></span></div>${areaSVG('rev-se',150)}</div>
+  </div>
+  <div class="grid g3" style="margin-bottom:14px">
+    <div class="card"><div class="hd"><h3>Data freshness</h3><span class="muted">CRM sync</span></div><div id="rev-fresh"></div></div>
+    <div class="card"><div class="hd"><h3>Pipeline by stage</h3><span class="muted">open deals</span></div><div id="rev-stages"></div></div>
+    <div class="card"><div class="hd"><h3>Outbound delivery queue</h3><span id="rev-dlq-sum" class="muted"></span></div><div id="rev-dlq"></div></div>
+  </div>
+  <div class="card"><div class="hd"><h3>Pipeline breakdown — open deals</h3><span class="muted">what the Pipeline value is computed from</span></div>
+    <div id="rev-deals" style="margin-top:6px"></div>
+    <div id="rev-deals-sum" class="mono" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:12.5px"></div></div>`;
+}
+function rev_up(){
+  const F=FLAGS,sf=F.crm_vendor_down||F.crm_credential_expired;
+  $('rev-kpis').innerHTML=[
+    kpi('Pipeline value',money(FLAGS.code_pipeline?2040000:1840000),'',{state:FLAGS.code_pipeline?'warn':undefined,stripe:FLAGS.code_pipeline?'warn':'acc'}),
+    kpi('Open deals','37','',{stripe:'acc'}),
+    kpi('Data freshness',dur(CUR.sync_lag),'',{state:CUR.sync_lag>300?'warn':'ok',spark:SERIES.sync_lag,sparkCol:'var(--warn)',stripe:CUR.sync_lag>300?'warn':'acc'}),
+    kpi('Sync errors',CUR.sync_err.toFixed(1),'%',{state:CUR.sync_err>1?'crit':'ok',spark:SERIES.sync_err,sparkCol:'var(--crit)',stripe:CUR.sync_err>1?'crit':'acc'})
+  ].join('');
+  drawArea($('rev-ds'),SERIES.deals_min,{color:'var(--s3)',fill:fillFor('rev-ds'),zero:true,fmt:v=>v.toFixed(1)+'/min'});$('rev-ds').style.color='var(--s3)';
+  drawArea($('rev-se'),SERIES.sync_err,{color:'var(--crit)',fill:fillFor('rev-se'),zero:true,fmt:v=>v.toFixed(2)+'%'});$('rev-se').style.color='var(--crit)';
+  $('rev-ds-cur').textContent=CUR.deals_min.toFixed(1)+'/min';$('rev-se-cur').textContent=CUR.sync_err.toFixed(2)+'%';
+  const stale=CUR.sync_lag>300;
+  $('rev-fresh').innerHTML=`<div class="gauge"><div style="flex:1"><div class="gnum" style="color:${stale?'var(--warn)':'var(--ok)'}">${dur(CUR.sync_lag)}</div><div class="muted" style="font-size:12px;margin-top:2px">since last sync · SLA 5m</div>
+    ${statPill(stale?'warn':'ok',stale?'Stale — status reads green':'Fresh')}</div></div>
+    <div class="bar" style="margin-top:14px"><span class="muted">freshness SLA</span><div class="track"><div class="fill" style="width:${clamp(100-CUR.sync_lag/300*100,2,100)}%;background:${stale?'var(--warn)':'var(--ok)'}"></div></div><span class="num">${stale?'breach':'ok'}</span></div>`;
+  const stages=[['Prospect',12],['Qualified',9],['Proposal',7],['Negotiation',6],['Closing',3]];const mxs=12;
+  $('rev-stages').innerHTML=stages.map(([n,v])=>`<div class="bar"><span>${n}</span><div class="track"><div class="fill" style="width:${v/mxs*100}%;background:var(--s1)"></div></div><span class="num">${v}</span></div>`).join('');
+  $('rev-dlq-sum').textContent=CUR.dlq+' stuck';
+  $('rev-dlq').innerHTML=CUR.dlq>0
+    ?`<div class="row"><div class="ic warn">!</div><div class="tx"><b class="mono">ACME-4021</b><p>outbound sync dead-lettered (downstream 409) — 1 item stuck, every other account delivering</p></div></div>
+      <div style="margin-top:8px" class="muted">4,812 delivered today · <span style="color:var(--warn)">1 dead-lettered</span></div>`
+    :`<div class="empty">✓ Queue clear — 4,813 delivered today, 0 dead-lettered</div>`;
+  // Pipeline breakdown — the visible PROOF the value is wrong: a multi-currency deal is counted once PER currency
+  // (a duplicate row, flagged) while the bug is armed, and dedups when the fix deploys. The running Σ === the KPI.
+  {
+    const bug=!!F.code_pipeline, rows=[]; let total=0;
+    for(const d of PIPE_DEALS){
+      if(bug && d.ccy.length>1){ d.ccy.forEach((c,i)=>{ total+=d.usd; rows.push(Object.assign({},d,{ccy:c,dupe:i>0})); }); }
+      else { total+=d.usd; rows.push(Object.assign({},d,{ccy:d.ccy.join('+'),dupe:false})); }
+    }
+    const dups=rows.filter(r=>r.dupe).length;
+    $('rev-deals').innerHTML=rows.map(r=>`<div class="bar" style="grid-template-columns:118px 1fr 74px 76px">
+      <span class="mono" style="${r.dupe?'color:var(--crit)':''}">${r.id}</span>
+      <span class="muted" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.name}${r.dupe?' <b style="color:var(--crit)">· ⚠ same deal, counted again</b>':''}</span>
+      <span class="mono muted" style="font-size:11px">${r.ccy}</span>
+      <span class="num" style="${r.dupe?'color:var(--crit)':''}">${money(r.usd)}</span></div>`).join('');
+    $('rev-deals-sum').innerHTML = bug
+      ? `<span style="color:var(--crit)">Σ ${money(total)} · overstated by ${money(200000)} — ${dups} currency rows double-counted (same deal id summed per currency)</span>`
+      : `<span style="color:var(--ok)">Σ ${money(total)} · each deal counted once ✓</span>`;
+  }
+}
+
+/* Support */
+function sup_sk(){
+  return `<div class="grid g4" style="margin-bottom:14px" id="sup-kpis"></div>
+  <div class="grid g2">
+    <div class="card"><div class="hd"><h3>Ticket inflow / hr</h3><span id="sup-in-cur" class="mono muted"></span></div>${areaSVG('sup-in',150)}</div>
+    <div class="card"><div class="hd"><h3>Queue by priority</h3><span class="muted">open</span></div><div id="sup-pri" style="margin-top:6px"></div>
+      <div class="hd" style="margin-top:16px"><h3>SLA compliance</h3></div><div id="sup-sla"></div></div>
+  </div>`;
+}
+function sup_up(){
+  const F=FLAGS,any=FAULTS.some(f=>F[f]&&!f.startsWith('code_'))||F.code_sla;   // support-affecting only
+  $('sup-kpis').innerHTML=[
+    kpi('Open tickets',fmt(CUR.open_tk),'',{state:CUR.open_tk>13?'warn':'ok',spark:SERIES.open_tk,stripe:CUR.open_tk>13?'warn':'acc'}),
+    kpi('SLA at risk',fmt(F.code_sla?1:CUR.sla),'',{state:(F.code_sla||CUR.sla>2)?'warn':'ok',stripe:(F.code_sla||CUR.sla>2)?'warn':'acc'}),
+    kpi('CSAT','4.6','/5',{state:'ok',stripe:'acc'}),
+    kpi('First response','12','min',{state:'ok',stripe:'acc'})
+  ].join('');
+  drawArea($('sup-in'),SERIES.inflow,{color:'var(--s1)',fill:fillFor('sup-in'),zero:true,fmt:v=>v.toFixed(0)+'/hr'});$('sup-in').style.color='var(--s1)';
+  $('sup-in-cur').textContent=CUR.inflow.toFixed(0)+'/hr';
+  const pr=[['Urgent',any?2:1,'crit'],['High',any?4:3,'warn'],['Medium',5,'info'],['Low',3,'ok']];const mx=8;
+  $('sup-pri').innerHTML=pr.map(([n,v,c])=>`<div class="bar"><span>${statPill(c,n)}</span><div class="track"><div class="fill" style="width:${v/mx*100}%;background:var(--${c==='crit'?'crit':c==='warn'?'warn':c==='info'?'accent':'ok'})"></div></div><span class="num">${v}</span></div>`).join('');
+  const comp=(100-CUR.sla*2.5).toFixed(1);
+  $('sup-sla').innerHTML=`<div class="bar"><span class="muted">on-time resolution</span><div class="track"><div class="fill" style="width:${comp}%;background:${comp<95?'var(--warn)':'var(--ok)'}"></div></div><span class="num">${comp}%</span></div>`;
+}
+
+/* Cloud */
+function cloud_sk(){
+  return `<div class="grid g4" style="margin-bottom:14px" id="cl-kpis"></div>
+  <div class="grid g2">
+    <div class="card"><div class="hd"><h3>Spend rate ($/hr)</h3><span id="cl-sp-cur" class="mono muted"></span></div>${areaSVG('cl-sp',150)}</div>
+    <div class="card"><div class="hd"><h3>Cost by service (MTD)</h3><span class="muted">top 5</span></div><div id="cl-bars" style="margin-top:6px"></div></div>
+  </div>`;
+}
+function cloud_up(){
+  const F=FLAGS;const spend=48200+(F.monitor_alert_storm?900:0);const budget=60000;
+  $('cl-kpis').innerHTML=[
+    kpi('MTD spend',money(spend),'',{state:spend/budget>.85?'warn':'ok',stripe:'acc'}),
+    kpi('Budget used',(spend/budget*100).toFixed(0),'%',{state:spend/budget>.85?'warn':'ok',stripe:spend/budget>.85?'warn':'acc'}),
+    kpi('Forecast',money(F.code_finops?78000:Math.round(spend*1.24)),'',{state:F.code_finops?'warn':'ok',stripe:F.code_finops?'warn':'acc'}),
+    kpi('Spend rate',money(CUR.spend_rate),'/hr',{state:F.monitor_alert_storm?'warn':'ok',spark:SERIES.spend_rate,stripe:F.monitor_alert_storm?'warn':'acc'})
+  ].join('');
+  drawArea($('cl-sp'),SERIES.spend_rate,{color:'var(--s1)',fill:fillFor('cl-sp'),fmt:v=>money(v)+'/hr'});$('cl-sp').style.color='var(--s1)';
+  $('cl-sp-cur').textContent=money(CUR.spend_rate)+'/hr';
+  const svc=[['Compute (EKS)',18400+(F.monitor_alert_storm?600:0)],['Data egress',9200+(F.monitor_alert_storm?300:0)],['RDS / Aurora',8100],['S3 + CDN',6400],['Observability',4900]];
+  const mx=Math.max(...svc.map(s=>s[1]));
+  $('cl-bars').innerHTML=svc.map(([n,v])=>`<div class="bar"><span>${n}</span><div class="track"><div class="fill" style="width:${v/mx*100}%;background:var(--s1)"></div></div><span class="num">${money(v)}</span></div>`).join('')
+    +(F.monitor_alert_storm?`<div class="muted" style="margin-top:8px;font-size:11.5px">▲ compute + egress up ~5% — retry traffic from the payments outage</div>`:'');
+}
+
+/* Security */
+function sec_sk(){
+  return `<div class="grid g4" style="margin-bottom:14px" id="sec-kpis"></div>
+  <div class="grid g2">
+    <div class="card"><div class="hd"><h3>Failed auth rate</h3><span id="sec-af-cur" class="mono muted"></span></div>${areaSVG('sec-af',150)}</div>
+    <div class="card"><div class="hd"><h3>Integration credentials</h3><span class="muted" id="sec-cr-sum"></span></div><div id="sec-creds" class="feed"></div></div>
+  </div>`;
+}
+function sec_up(){
+  const F=FLAGS;
+  $('sec-kpis').innerHTML=[
+    kpi('Expired creds',F.crm_credential_expired?'1':'0','',{state:F.crm_credential_expired?'crit':'ok',stripe:F.crm_credential_expired?'crit':'acc'}),
+    kpi('Failed auth',CUR.auth_fail.toFixed(1),'%',{state:CUR.auth_fail>2?'crit':'ok',spark:SERIES.auth_fail,sparkCol:'var(--crit)',stripe:CUR.auth_fail>2?'crit':'acc'}),
+    kpi('MFA coverage','98','%',{state:'ok',stripe:'acc'}),
+    kpi('Access review',F.code_access?'1':'0',F.code_access?'miss':'clean',{state:F.code_access?'warn':'ok',stripe:F.code_access?'warn':'acc'})
+  ].join('');
+  drawArea($('sec-af'),SERIES.auth_fail,{color:'var(--crit)',fill:fillFor('sec-af'),zero:true,fmt:v=>v.toFixed(2)+'%'});$('sec-af').style.color='var(--crit)';
+  $('sec-af-cur').textContent=CUR.auth_fail.toFixed(2)+'%';
+  const creds=[
+    ['Twenty CRM · sync key',F.crm_credential_expired?'crit':'ok',F.crm_credential_expired?'EXPIRED — rotation drafted, awaiting approval':'valid · rotates in 42d'],
+    ['Stripe · webhook secret','ok','valid · rotates in 18d'],
+    ['Freshdesk · API token','ok','valid · rotates in 60d'],
+    ['AWS · deploy role','warn','expires in 6d'],
+    ['Datadog · ingest key','ok','valid · rotates in 90d']
+  ];
+  $('sec-creds').innerHTML=creds.map(([n,s,m])=>`<div class="row"><div class="ic ${s}">${iconFor(s)}</div><div class="tx"><b>${n}</b><p>${m}</p></div><div class="tm">${s==='crit'?'now':s==='warn'?'6d':''}</div></div>`).join('');
+  $('sec-cr-sum').textContent=(F.crm_credential_expired?'1 expired · ':'')+'1 expiring';
+}
+
+/* ── feed rendering ── */
+function renderFeed(id){
+  const el=$(id); if(!el)return;
+  if(!feed.length){el.innerHTML=`<div class="empty">Monitoring — no incidents recorded this session</div>`;return;}
+  el.innerHTML=feed.map(f=>{
+    const ic=f.kind==='raise'?'crit':f.kind==='resolve'?'ok':'acc';
+    const tm=f.t.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    return `<div class="row"><div class="ic ${ic}">${f.kind==='raise'?'!':f.kind==='resolve'?'✓':'◆'}</div><div class="tx"><b>${f.dom}</b><p>${f.text}</p></div><div class="tm">${tm}</div></div>`;
+  }).join('');
+}
+function activeIncidents(){return FAULTS.filter(f=>FLAGS[f]);}
+
+/* ── top chrome ── */
+function renderNav(){
+  $('nav').innerHTML=`<div class="navlab">Operations</div>`+TABS.map(t=>`<div class="navitem ${t.k===active?'on':''}" onclick="go('${t.k}')"><span class="ic">${t.ic}</span><span class="nm">${t.nm}</span><span class="dot" id="nd-${t.k}" style="display:${t.k==='overview'?'none':''}"></span></div>`).join('');
+}
+function updateChrome(){
+  const F=FLAGS,h=domHealth(F),gs=worst(h),any=activeIncidents().length;
+  TABS.slice(1).forEach(t=>{const d=$('nd-'+t.k);if(d){d.className='dot '+(h[t.k]==='ok'?'':h[t.k]);}});
+  const gt=$('gstatus'),tt=$('gstatus-t');
+  gt.className='statuspill '+(gs==='ok'?'ok':gs);
+  tt.textContent=F.monitor_alert_storm?'Major incident':gs==='ok'?'Operational':'Degraded';
+  const tb=TABS.find(t=>t.k===active);$('tb-title').textContent=tb.nm;$('tb-sub').textContent='· '+tb.src;
+  // AgentForge indicator (stable node, class-toggled — no DOM swapping)
+  const chip=$('agfchip'),lab=$('agf-lab'),ind=$('agf-ind');
+  if(any){chip.className='agfchip on';ind.className='spin';lab.textContent='AgentForge · engaged ('+any+')';agfState='engaged';}
+  else{
+    if(agfState==='engaged'){agfState='resolved';agfSince=Date.now();}
+    const recent=agfState==='resolved'&&(Date.now()-agfSince)<20000;
+    chip.className='agfchip'+(recent?' on':'');ind.className='dot';
+    lab.textContent=recent?'AgentForge · resolved ✓':'AgentForge · monitoring';
+  }
+  $('agf-dot').className='dot '+(any?'crit':'');
+  $('agf-foot').textContent=any?'AgentForge · engaged':'AgentForge · monitoring';
+  $('incfoot').innerHTML=any?`<span style="color:var(--crit)">● ${any} active incident${any>1?'s':''}</span>`:(connected?'No active incidents':'⚠ sidecar unreachable');
+}
+
+/* ── loop ── */
+const UP={overview:ov_up,system:sys_up,revenue:rev_up,support:sup_up,cloud:cloud_up,security:sec_up};
+function go(k){if(!UP[k])k='overview';active=k;try{history.replaceState(null,'','#'+k);}catch(e){}renderNav();$('view').innerHTML=skeleton(k);UP[k]();updateChrome();}
+function diffFlags(F){
+  if(lastFlags){FAULTS.forEach(f=>{
+    if(F[f]&&!lastFlags[f]){const i=INC[f];pushFeed('raise',i.dom,i.raise);}
+    if(!F[f]&&lastFlags[f]){const i=INC[f];pushFeed('resolve',i.dom,'Resolved by AgentForge — '+i.fix);}
+  });}
+  lastFlags={...F};
+}
+async function tick(){
+  try{const r=await fetch('/state',{cache:'no-store'});FLAGS=await r.json();connected=true;}
+  catch(e){connected=false;/* keep last flags */}
+  // cc-code-5 (theme.py): the HEALTHY status colour IS the visible symptom. When code_accent is armed every
+  // "healthy" signal (the Operational pill, the green service dots, the ok KPI stripes) renders the danger RED —
+  // the dashboard looks like it is on fire even though every status is OK. It repaints to green the moment the fix
+  // deploys (flag cleared on approval). Mirrors theme.status_ok_color(): red #f85149 (bug) vs green #3fb950 (fixed).
+  const _rs=document.documentElement.style;
+  if(FLAGS.code_accent){_rs.setProperty('--ok','#f85149');_rs.setProperty('--ok-soft','rgba(248,81,73,.13)');_rs.setProperty('--ok-text','#ff8983');}
+  else{_rs.setProperty('--ok','#3fb950');_rs.setProperty('--ok-soft','rgba(63,185,80,.13)');_rs.setProperty('--ok-text','#7ee39a');}
+  FAULTS.forEach(f=>{if(FLAGS[f]!==undefined&&FLAGS[f])everBad[f]=true;});
+  diffFlags(FLAGS);
+  advance(FLAGS);
+  try{UP[active]();}catch(e){/* skeleton not ready */}
+  updateChrome();
+}
+function clock(){$('clock').textContent=new Date().toLocaleTimeString([],{hour12:false});}
+window.addEventListener('resize',()=>{try{UP[active]();}catch(e){}});
+// boot
+FLAGS=Object.fromEntries(FAULTS.map(f=>[f,false]));lastFlags={...FLAGS};
+try{const h0=(location.hash||'').slice(1);if(UP[h0])active=h0;}catch(e){}
+for(let i=0;i<8;i++)advance(FLAGS); // warm the series
+renderNav();$('view').innerHTML=skeleton(active);UP[active]();updateChrome();clock();
+try{window.addEventListener('hashchange',()=>{const k=location.hash.slice(1);if(UP[k])go(k);});}catch(e){}
+setInterval(clock,1000);
+setInterval(tick,2000);tick();
+</script>
+</body>
+</html>
