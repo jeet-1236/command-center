@@ -65,7 +65,7 @@
   .agfchip .spin{width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);animation:pulse2 1.1s infinite}
   @keyframes pulse2{0%,100%{opacity:1}50%{opacity:.35}}
 
-  .view{padding:22px;overflow:auto;flex:1;min-height:0}
+  .view{padding:22px;padding-bottom:130px;overflow:auto;flex:1;min-height:0}   /* clearance so content scrolls above the Demo Controls panel */
   .viewhead{display:flex;align-items:baseline;gap:12px;margin:0 2px 16px}
   .viewhead h2{margin:0;font-size:20px;font-weight:680;letter-spacing:-.2px}
   .viewhead .src{font-size:12px;color:var(--text-3)}
@@ -672,14 +672,17 @@ setInterval(tick,2000);tick();
 
 <!-- ═══════ DEMO CONTROLS — manager self-serve (arm + file to AgentForge + reset) ═══════ -->
 <style>
-  #democtl{position:fixed;right:16px;bottom:16px;z-index:9999;width:288px;background:var(--surface-2);
+  #democtl{position:fixed;right:16px;bottom:16px;z-index:9999;width:288px;max-width:calc(100vw - 32px);
+    max-height:calc(100vh - 32px);background:var(--surface-2);
     border:1px solid var(--line,#2a3446);border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.5);
-    font-family:var(--sans);color:var(--text);overflow:hidden}
+    font-family:var(--sans);color:var(--text);overflow:hidden;display:flex;flex-direction:column}
   #democtl-head{display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;font-weight:700;
     font-size:13px;color:#fff;background:linear-gradient(135deg,var(--accent),#7c3aed)}
   #democtl-arm{margin-left:auto;font-weight:500;opacity:.9;font-size:11px}
-  #democtl-body{padding:11px 12px;display:flex;flex-direction:column;gap:7px}
+  #democtl-body{padding:11px 12px;display:flex;flex-direction:column;gap:7px;overflow-y:auto;min-height:0}
   #democtl.min #democtl-body{display:none}
+  #democtl #dc-pr{font-size:11px;line-height:1.4}
+  #democtl #dc-pr a{color:var(--accent-2);text-decoration:none;font-weight:700}
   #democtl .hint{font-size:11px;color:var(--text-3,#8b98a9);line-height:1.45}
   #democtl .lbl{font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-3,#8b98a9);margin-top:3px}
   #democtl button,#democtl .dc-link{font:600 12px var(--sans);border-radius:8px;padding:8px 10px;
@@ -706,6 +709,7 @@ setInterval(tick,2000);tick();
     <a class="dc-link" id="dc-console" href="#" target="_blank" rel="noopener">3 · Open console to approve →</a>
     <button id="dc-reset" class="dc-reset">↺ Reset / heal everything</button>
     <div id="dc-msg"></div>
+    <div id="dc-pr"></div>
   </div>
 </div>
 <script>
@@ -725,7 +729,14 @@ setInterval(tick,2000);tick();
       details:'Operational incident (no code change): the CRM dashboard has not updated in ~45 minutes yet every monitor reads green (healthy-status trap). OUR CRM sync worker appears wedged. Diagnose and apply the reversible mitigation. Do not modify code.'}
   };
   var msg=document.getElementById('dc-msg');
+  var prel=document.getElementById('dc-pr');
   function flash(t,ok){msg.textContent=t;msg.style.color=(ok===false)?'#ff8983':'var(--ok-text)';}
+  function setpr(url){
+    if(!url){prel.innerHTML='';return;}
+    var n=String(url).split('/').pop();
+    prel.innerHTML='🔗 PR #'+n+' — <a href="'+url+'" target="_blank" rel="noopener">View on GitHub →</a>';
+  }
+  var _poll=null;
   async function ccpost(path,body){
     try{var r=await fetch(path,{method:'POST',headers:{'content-type':'application/json'},body:body?JSON.stringify(body):null});
       return await r.json();}catch(e){return {ok:false,error:String(e)};}
@@ -752,8 +763,27 @@ setInterval(tick,2000);tick();
       var tr=await fetch(PLATFORM+'/tickets',{method:'POST',headers:{'content-type':'application/json','authorization':'Bearer '+tok},
         body:JSON.stringify({source:'manual',type:t.type,repo:MIRROR,ref:'main',title:t.title,details:t.details})});
       var tj=await tr.json();
-      if(tj.id){flash('✓ Filed ticket '+String(tj.id).slice(0,8)+' — open the console to approve →');}
-      else{flash('File failed: '+String(tj.detail||JSON.stringify(tj)).slice(0,70),false);}
+      if(!tj.id){flash('File failed: '+String(tj.detail||JSON.stringify(tj)).slice(0,70),false);return;}
+      var tid=String(tj.id);
+      setpr(''); flash('✓ Filed ticket '+tid.slice(0,8)+' — agents are working…');
+      // live status + GitHub PR link (auth header carries the same session token)
+      var AUTH={'authorization':'Bearer '+tok};
+      if(_poll)clearInterval(_poll); var tries=0;
+      _poll=setInterval(async function(){
+        tries++;
+        try{
+          var tk=await (await fetch(PLATFORM+'/tickets/'+tid,{headers:AUTH})).json();
+          var st=tk.status||'';
+          var runs=await (await fetch(PLATFORM+'/runs?item_id='+tid,{headers:AUTH})).json();
+          runs=Array.isArray(runs)?runs:(runs.runs||[]);
+          var pr=runs[0]&&runs[0].pr_url; if(pr)setpr(pr);
+          if(st==='pr_open'||st==='awaiting_approval'){flash('✓ Fix ready — open the console to approve →');clearInterval(_poll);}
+          else if(st==='resolved'){flash('✓ Resolved & healed');clearInterval(_poll);}
+          else if(st==='failed'||st==='needs_triage'){flash('Ended: '+st,false);clearInterval(_poll);}
+          else{flash('Agents working…'+(st?' ('+st+')':''));}
+        }catch(e){}
+        if(tries>72)clearInterval(_poll);
+      },5000);
     }catch(e){flash('File failed (network/CORS): '+e,false);}
   });
   document.getElementById('dc-reset').addEventListener('click',async function(){
