@@ -669,5 +669,70 @@ try{window.addEventListener('hashchange',()=>{const k=location.hash.slice(1);if(
 setInterval(clock,1000);
 setInterval(tick,2000);tick();
 </script>
+
+<!-- ═══════ DEMO CONTROLS — manager self-serve (same-origin → no CORS, no login) ═══════ -->
+<style>
+  #democtl{position:fixed;right:16px;bottom:16px;z-index:9999;width:266px;background:var(--surface-2);
+    border:1px solid var(--line,#2a3446);border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.5);
+    font-family:var(--sans);color:var(--text);overflow:hidden}
+  #democtl-head{display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;font-weight:700;
+    font-size:13px;color:#fff;background:linear-gradient(135deg,var(--accent),#7c3aed)}
+  #democtl-arm{margin-left:auto;font-weight:500;opacity:.9;font-size:11px}
+  #democtl-body{padding:11px 12px;display:flex;flex-direction:column;gap:7px}
+  #democtl.min #democtl-body{display:none}
+  #democtl .hint{font-size:11px;color:var(--text-3,#8b98a9);line-height:1.45}
+  #democtl button,#democtl .dc-link{font:600 12px var(--sans);border-radius:8px;padding:8px 10px;
+    cursor:pointer;border:1px solid transparent;text-decoration:none;display:block;width:100%;box-sizing:border-box}
+  #democtl .dc-arm{background:var(--surface-3);color:var(--text);border-color:var(--line,#2a3446);text-align:left}
+  #democtl .dc-arm:hover{border-color:var(--accent);color:#dbe9ff}
+  #democtl .dc-link{background:var(--accent-soft);color:var(--accent-2);border-color:rgba(59,130,246,.4);text-align:center}
+  #democtl .dc-reset{background:var(--ok-soft);color:var(--ok-text);border-color:rgba(63,185,80,.35);text-align:center}
+  #democtl #dc-msg{font-size:11px;min-height:14px;line-height:1.35;color:var(--ok-text)}
+</style>
+<div id="democtl">
+  <div id="democtl-head" title="click to collapse"><span>🎬 Demo Controls</span><span id="democtl-arm">—</span></div>
+  <div id="democtl-body">
+    <div class="hint"><b>1.</b> Arm a bug → <b>2.</b> file &amp; approve it in the console → <b>3.</b> watch it heal here → <b>4.</b> Reset.</div>
+    <button class="dc-arm" data-fault="code_pipeline">Arm: Pipeline bug ($2.04M)</button>
+    <button class="dc-arm" data-fault="code_accent">Arm: Status-colour bug (red)</button>
+    <a class="dc-link" id="dc-console" href="#" target="_blank" rel="noopener">Open AgentForge Console →</a>
+    <button id="dc-reset" class="dc-reset">↺ Reset / heal everything</button>
+    <div id="dc-msg"></div>
+  </div>
+</div>
+<script>
+(function(){
+  // Console URL: ?console=<url> override, else the known Vercel deployment.
+  var params=new URLSearchParams(location.search);
+  var CONSOLE=params.get('console')||'https://agent-forge-three-gold.vercel.app';
+  document.getElementById('dc-console').href=CONSOLE;
+  var msg=document.getElementById('dc-msg');
+  function flash(t,ok){msg.textContent=t;msg.style.color=(ok===false)?'#ff8983':'var(--ok-text)';}
+  async function post(path,body){
+    try{var r=await fetch(path,{method:'POST',headers:{'content-type':'application/json'},body:body?JSON.stringify(body):null});
+      return await r.json();}catch(e){return {ok:false,error:String(e)};}
+  }
+  document.querySelectorAll('#democtl .dc-arm').forEach(function(b){
+    b.addEventListener('click',async function(){
+      var f=b.getAttribute('data-fault');
+      flash('Arming '+f+'…');
+      var d=await post('/admin/scenario',{fault:f,on:true});
+      flash(d.ok?('✓ Armed — now file a ticket in the console'):('Error: '+(d.error||'failed')),d.ok);
+    });
+  });
+  document.getElementById('dc-reset').addEventListener('click',async function(){
+    flash('Resetting…');
+    var d=await post('/admin/reset',null);
+    flash(d.ok?'✓ Reset — every panel healthy again':'Reset failed',d.ok);
+  });
+  document.getElementById('democtl-head').addEventListener('click',function(){
+    document.getElementById('democtl').classList.toggle('min');});
+  async function poll(){try{var r=await fetch('/state',{cache:'no-store'});var s=await r.json();
+    var on=Object.keys(s).filter(function(k){return s[k]===true;});
+    document.getElementById('democtl-arm').textContent=on.length?(on.length+' armed'):'all clear';
+  }catch(e){document.getElementById('democtl-arm').textContent='';}}
+  setInterval(poll,2000);poll();
+})();
+</script>
 </body>
 </html>

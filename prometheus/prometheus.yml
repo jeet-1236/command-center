@@ -1,0 +1,24 @@
+# Prometheus scrape config for the AgentForge demo on Railway.
+# Scrapes the Company Command Center's /metrics (fault-derived gauges: cc_pipeline_usd,
+# cc_crm_vendor_up, cc_crm_sync_lag_seconds, cc_service_up{service=...}, …) so the AgentForge
+# platform's `prometheus` observability backend can CONFIRM "is it us / the client / the vendor?"
+# against live telemetry instead of passing through "unconfirmed".
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # The Command Center (public HTTPS surface; :443). Internal DNS also works if you prefer:
+  #   scheme: http ; targets: ["command-center.railway.internal:<port>"]
+  - job_name: command-center
+    metrics_path: /metrics
+    scheme: https
+    static_configs:
+      - targets: ["command-center-production-9dbf.up.railway.app:443"]
+        labels:
+          service: command-center
+
+  # Prometheus itself (health of the scraper).
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
