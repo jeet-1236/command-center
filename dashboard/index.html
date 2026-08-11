@@ -679,10 +679,24 @@ setInterval(tick,2000);tick();
   #democtl-head{display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;font-weight:700;
     font-size:13px;color:#fff;background:linear-gradient(135deg,var(--accent),#7c3aed)}
   #democtl-arm{margin-left:auto;font-weight:500;opacity:.9;font-size:11px}
-  #democtl-min{width:22px;height:22px;padding:0;line-height:1;border-radius:6px;flex:0 0 auto;
-    background:var(--surface-3);color:var(--text);border:1px solid var(--line,#2a3446);
-    font:700 14px/1 var(--sans);cursor:pointer}
-  #democtl-min:hover{border-color:var(--accent);color:#dbe9ff}
+  /* #democtl button (1-0-1) outranks #democtl-min (1-0-0), so this MUST be at least as specific or the
+     generic padding/width stretches it across the header. */
+  #democtl #democtl-min{box-sizing:border-box;width:24px;height:24px;min-width:24px;flex:0 0 24px;
+    padding:0;margin:0;line-height:22px;text-align:center;border-radius:6px;
+    background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.35);
+    font:700 15px/22px var(--sans);cursor:pointer;transition:background .15s}
+  #democtl #democtl-min:hover{background:rgba(255,255,255,.28)}
+  /* symptom card — what the USER sees when the defect bites */
+  #dc-symptom{display:none;margin-top:2px;border:1px solid var(--line,#2a3446);border-radius:8px;
+    background:var(--surface-2,#141b26);padding:9px 10px;font-size:11px;line-height:1.5}
+  #dc-symptom.show{display:block}
+  #dc-symptom .sy-t{font-weight:700;font-size:11px;margin-bottom:5px;color:var(--text)}
+  #dc-symptom .sy-ctx{color:var(--text-3,#8b98a9);margin-bottom:6px}
+  #dc-symptom .sy-row{display:flex;align-items:center;gap:7px;margin-top:3px;font-family:var(--mono,ui-monospace,monospace)}
+  #dc-symptom .sy-bad{color:#ff8983;font-weight:700}
+  #dc-symptom .sy-good{color:var(--ok-text,#3fb950);font-weight:700}
+  #dc-symptom .sy-tag{font-size:9px;letter-spacing:.04em;text-transform:uppercase;opacity:.75;
+    font-family:var(--sans);min-width:64px}
   #democtl .dc-bug{background:var(--surface-3);color:var(--text);border-color:var(--line,#2a3446);
     text-align:left;font-weight:500;font-size:11.5px;padding:7px 9px}
   #democtl .dc-bug:hover{border-color:var(--accent);color:#dbe9ff}
@@ -721,6 +735,7 @@ setInterval(tick,2000);tick();
     <button class="dc-bug" data-bug="onhold">⏸ SLA counts time spent waiting on the customer</button>
     <button class="dc-bug" data-bug="sla_clock">📅 SLA clock runs over the weekend</button>
     <button class="dc-bug" data-bug="exports">🔤 Accented names cut off in the export</button>
+    <div id="dc-symptom"></div>
     <div class="lbl">Or — find bugs nobody reported</div>
     <button id="dc-sweep" class="dc-send" style="background:var(--surface-3);border-color:var(--accent)">🔍 Sweep the codebase for unreported defects</button>
     <div id="dc-sweep-out"></div>
@@ -865,9 +880,36 @@ setInterval(tick,2000);tick();
     exports:{title:'Accented account names are cut off mid-character in the CSV export',
       details:"When we export the accounts list, names like 'Jose Alvarez' with accents come out mangled and shorter than the ten characters the column allows. Plain ASCII names look fine."}
   };
+  // What the USER sees when each defect bites. These are the ACTUAL outputs of the buggy code, not
+  // illustrations — computed by running the shipped functions (billing 99c, ledger 5000c, 660min, 3960min,
+  // 'José Álv'). If a fix lands, the "should be" column is what the code then returns.
+  var SYMPTOMS={
+    billing:{t:'Invoice #4821 · Finance',ctx:'10 lines × $0.10 each',
+      bad:'Total  $0.99',good:'Total  $1.00',badlbl:'shown',goodlbl:'should be'},
+    idempotency:{t:'Customer ledger · one purchase',ctx:'client timed out and retried the same request',
+      bad:'Charged  $50.00',good:'Charged  $25.00',badlbl:'billed',goodlbl:'should be'},
+    onhold:{t:'Ticket SLA · resolution clock',ctx:'30m worked · 600m awaiting the customer · 30m worked',
+      bad:'660 min counted',good:'60 min counted',badlbl:'counted',goodlbl:'should be'},
+    sla_clock:{t:'Ticket raised Fri 16:00 · support 09:00–17:00 Mon–Fri',ctx:'checked Monday 10:00',
+      bad:'3960 min elapsed → BREACHED',good:'120 min elapsed → on track',badlbl:'shown',goodlbl:'should be'},
+    exports:{t:'Accounts export · name column (10 chars)',ctx:'account name “José Álvarez”',
+      bad:'“José Álv”',good:'“José Álvar”',badlbl:'exported',goodlbl:'should be'}
+  };
+  function showSymptom(key){
+    var el=document.getElementById('dc-symptom'), s=SYMPTOMS[key];
+    if(!s){el.className='';el.innerHTML='';return;}
+    el.innerHTML='<div class="sy-t">👁 What the user sees — '+s.t+'</div>'+
+      '<div class="sy-ctx">'+s.ctx+'</div>'+
+      '<div class="sy-row"><span class="sy-tag">'+s.badlbl+'</span><span class="sy-bad">✗ '+s.bad+'</span></div>'+
+      '<div class="sy-row"><span class="sy-tag">'+s.goodlbl+'</span><span class="sy-good">✓ '+s.good+'</span></div>';
+    el.className='show';
+  }
   Array.prototype.forEach.call(document.querySelectorAll('.dc-bug'),function(b){
+    // hovering previews the symptom; clicking keeps it on screen while the agents work
+    b.addEventListener('mouseenter',function(){ if(!b.disabled) showSymptom(b.getAttribute('data-bug')); });
     b.addEventListener('click',async function(){
       var t=CODE_BUGS[b.getAttribute('data-bug')]; if(!t)return;
+      showSymptom(b.getAttribute('data-bug'));
       Array.prototype.forEach.call(document.querySelectorAll('.dc-bug'),function(x){x.disabled=true;});
       flash('Filing “'+t.title.slice(0,38)+'…” to AgentForge…'); setpr('');
       try{
