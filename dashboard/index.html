@@ -214,7 +214,9 @@ const DEFECT_KPI={
   sla_clock:{lab:'Fri 16:00 ticket',val:'BREACHED',unit:'≠ on track',
     sym:'The SLA clock ran overnight and through the weekend'},
   exports:{lab:'Export · name column',val:'José Álv',unit:'≠ José Álvar',
-    sym:'Accented names are cut mid-character in the export'}
+    sym:'Accented names are cut mid-character in the export'},
+  ui_format:{lab:'Pipeline value',val:'$1840000',unit:'overflows · ≠ $1.84M',
+    sym:'The KPI tile renders a raw seven-digit number instead of $1.84M'}
 };
 const FAULTS=['crm_sync_stalled','crm_vendor_down','crm_credential_expired','monitor_alert_storm','crm_delivery_stuck','account_mismatch',
               'code_pipeline','code_sla','code_finops','code_access','code_accent'];
@@ -754,6 +756,7 @@ setInterval(tick,2000);tick();
     <button class="dc-bug" data-bug="onhold">⏸ SLA counts time spent waiting on the customer</button>
     <button class="dc-bug" data-bug="sla_clock">📅 SLA clock runs over the weekend</button>
     <button class="dc-bug" data-bug="exports">🔤 Accented names cut off in the export</button>
+    <button class="dc-bug" data-bug="ui_format">🖥 KPI tile shows $1840000 (front-end)</button>
     <div id="dc-symptom"></div>
     <a class="dc-link" id="dc-raise" href="#" target="_blank" rel="noopener" style="display:none">↗ Raise this ticket in the console</a>
     <div class="lbl">Or — find bugs nobody reported</div>
@@ -897,6 +900,8 @@ setInterval(tick,2000);tick();
       details:'Tickets parked awaiting a reply from the customer are still burning their resolution target, so the desk is posting breaches for time it could not do anything about.'},
     sla_clock:{title:'Tickets raised on a Friday afternoon breach over the weekend',
       details:'Our support hours are 09:00-17:00 Monday to Friday, but a ticket opened late on Friday is already breached by Monday morning even though nobody was working. The countdown appears to run overnight and at weekends.'},
+    ui_format:{title:'The Pipeline value tile shows an unreadable raw number',
+      details:'On the overview the Pipeline value KPI renders as a long raw figure that overflows its tile and gets clipped, instead of the compact form the other tiles use. The underlying value is correct — it is only how it is displayed.'},
     exports:{title:'Accented account names are cut off mid-character in the CSV export',
       details:"When we export the accounts list, names like 'Jose Alvarez' with accents come out mangled and shorter than the ten characters the column allows. Plain ASCII names look fine."}
   };
@@ -913,7 +918,9 @@ setInterval(tick,2000);tick();
     sla_clock:{t:'Ticket raised Fri 16:00 · support 09:00–17:00 Mon–Fri',ctx:'checked Monday 10:00',
       bad:'3960 min elapsed → BREACHED',good:'120 min elapsed → on track',badlbl:'shown',goodlbl:'should be'},
     exports:{t:'Accounts export · name column (10 chars)',ctx:'account name “José Álvarez”',
-      bad:'“José Álv”',good:'“José Álvar”',badlbl:'exported',goodlbl:'should be'}
+      bad:'“José Álv”',good:'“José Álvar”',badlbl:'exported',goodlbl:'should be'},
+    ui_format:{t:'Overview · Pipeline value tile (front-end)',ctx:'the tile is ~90px wide',
+      bad:'$1840000  (clipped)',good:'$1.84M',badlbl:'rendered',goodlbl:'should be'}
   };
   function showSymptom(key){
     var el=document.getElementById('dc-symptom'), s=SYMPTOMS[key];
