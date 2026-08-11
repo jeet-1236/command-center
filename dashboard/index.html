@@ -200,6 +200,22 @@ function track(name,init){SERIES[name]=Array.from({length:N},()=>init);CUR[name]
  ['open_tk',12],['sla',2]].forEach(([n,v])=>track(n,v));
 
 let FLAGS={}, everBad={}, feed=[], lastFlags=null, agfState='idle', agfSince=0, connected=true;
+// CODE-DEFECT PREVIEW (client-side only — nothing is filed, nothing on the server changes).
+// Arming one makes the dashboard show the WRONG number the shipped defect actually produces, so an audience
+// SEES the symptom before anyone raises a ticket. Values are the real outputs of the buggy functions.
+let DEFECT=null;
+const DEFECT_KPI={
+  billing:{lab:'Invoice #4821',val:'$0.99',unit:'≠ $1.00 of lines',
+    sym:'Invoice total disagrees with the sum of its own lines'},
+  idempotency:{lab:'Charged · 1 purchase',val:'$50.00',unit:'≠ $25.00',
+    sym:'A retried request charged the customer twice'},
+  onhold:{lab:'SLA counted',val:'660',unit:'min · ≠ 60',
+    sym:'Time awaiting the customer is being charged to the desk'},
+  sla_clock:{lab:'Fri 16:00 ticket',val:'BREACHED',unit:'≠ on track',
+    sym:'The SLA clock ran overnight and through the weekend'},
+  exports:{lab:'Export · name column',val:'José Álv',unit:'≠ José Álvar',
+    sym:'Accented names are cut mid-character in the export'}
+};
 const FAULTS=['crm_sync_stalled','crm_vendor_down','crm_credential_expired','monitor_alert_storm','crm_delivery_stuck','account_mismatch',
               'code_pipeline','code_sla','code_finops','code_access','code_accent'];
 const CODE_FAULTS=['code_pipeline','code_sla','code_finops','code_access','code_accent'];   // L3 code defects (fixed via a PR, not an L2 action)
@@ -393,10 +409,13 @@ function ov_up(){
     kpi('Cloud spend',(CUR.spend_rate*24/1000).toFixed(1)+'k','/day',{stripe:'acc'}),
     kpi('Expired creds',fmt(F.crm_credential_expired?1:0),'',{state:F.crm_credential_expired?'crit':'ok',stripe:F.crm_credential_expired?'crit':'acc'}),
     kpi('Dead-letter Q',fmt(CUR.dlq),'',{state:CUR.dlq>0?'warn':'ok',stripe:CUR.dlq>0?'warn':'acc'})
-  ].join('');
+  ].concat(DEFECT&&DEFECT_KPI[DEFECT]?[kpi(DEFECT_KPI[DEFECT].lab,DEFECT_KPI[DEFECT].val,DEFECT_KPI[DEFECT].unit,
+      {state:'crit',stripe:'crit'})]:[]).join('');
   const bn=$('ov-banner');
   if(F.monitor_alert_storm){bn.innerHTML=banner('crit','Major incident in progress','A real service outage is being handled amid an alert storm. AgentForge is engaged.');}
   else if(any){bn.innerHTML=banner('warn',(activeIncidents().length)+' active incident'+(activeIncidents().length>1?'s':'')+' — AgentForge engaged','Detected from live telemetry. Follow it through the AgentForge console; this dashboard heals when it resolves.');}
+  else if(DEFECT&&DEFECT_KPI[DEFECT]){bn.innerHTML=banner('crit','Data integrity issue — '+DEFECT_KPI[DEFECT].sym,
+    'Every monitor is green, yet the number above is wrong. Nobody has reported it. Raise it in the AgentForge console and watch it get fixed.');}
   else{bn.innerHTML=banner('ok','All systems operational','No active incidents. Every domain is within its SLOs.');}
   $('ov-dh-sum').textContent=Object.values(h).filter(x=>x==='crit'||x==='warn').length+' need attention';
   $('ov-domains').innerHTML=TABS.slice(1).map(tb=>{const s=h[tb.k];return `<div class="svc ${s==='crit'?'bad':s==='warn'?'warnb':''}"><span class="ic ${s}" style="width:22px;height:22px;border-radius:6px;display:grid;place-items:center">${iconFor(s)}</span><div><div class="nm">${tb.nm}</div><div class="mt">${tb.src}</div></div><div class="rt">${statPill(s,s==='ok'?'Healthy':s==='warn'?'Degraded':'Incident')}</div></div>`}).join('');
@@ -736,6 +755,7 @@ setInterval(tick,2000);tick();
     <button class="dc-bug" data-bug="sla_clock">📅 SLA clock runs over the weekend</button>
     <button class="dc-bug" data-bug="exports">🔤 Accented names cut off in the export</button>
     <div id="dc-symptom"></div>
+    <a class="dc-link" id="dc-raise" href="#" target="_blank" rel="noopener" style="display:none">↗ Raise this ticket in the console</a>
     <div class="lbl">Or — find bugs nobody reported</div>
     <button id="dc-sweep" class="dc-send" style="background:var(--surface-3);border-color:var(--accent)">🔍 Sweep the codebase for unreported defects</button>
     <div id="dc-sweep-out"></div>
@@ -905,9 +925,30 @@ setInterval(tick,2000);tick();
     el.className='show';
   }
   Array.prototype.forEach.call(document.querySelectorAll('.dc-bug'),function(b){
-    // hovering previews the symptom; clicking keeps it on screen while the agents work
+    // hovering previews the symptom; clicking ARMS it on the dashboard (it does NOT file a ticket — the
+    // point of the demo is that you SEE the wrong number first, then decide to raise it)
     b.addEventListener('mouseenter',function(){ if(!b.disabled) showSymptom(b.getAttribute('data-bug')); });
-    b.addEventListener('click',async function(){
+    b.addEventListener('click',function(){
+      var k=b.getAttribute('data-bug');
+      DEFECT=(DEFECT===k)?null:k;                      // click again to clear
+      Array.prototype.forEach.call(document.querySelectorAll('.dc-bug'),function(x){
+        x.classList.toggle('on',x.getAttribute('data-bug')===DEFECT);});
+      showSymptom(DEFECT);
+      try{tick();}catch(e){}                            // repaint immediately
+      var raise=document.getElementById('dc-raise');
+      if(DEFECT){
+        flash('👁 Symptom is now visible on the dashboard — raise it in the console');
+        setpr('');
+        var c=document.getElementById('dc-console');
+        raise.href=(c&&c.href&&c.href!=='#')?c.href:'https://agent-forge-three-gold.vercel.app';
+        raise.style.display='block';
+        raise.textContent='↗ Raise “'+(CODE_BUGS[DEFECT]?CODE_BUGS[DEFECT].title.slice(0,26):DEFECT)+'…” in the console';
+      } else { flash('Cleared'); raise.style.display='none'; }
+    });
+  });
+  // kept for reference: the old one-click "file it straight away" path
+  function _unusedFile(b){
+    (async function(){
       var t=CODE_BUGS[b.getAttribute('data-bug')]; if(!t)return;
       showSymptom(b.getAttribute('data-bug'));
       Array.prototype.forEach.call(document.querySelectorAll('.dc-bug'),function(x){x.disabled=true;});
@@ -946,8 +987,8 @@ setInterval(tick,2000);tick();
         flash('Failed: '+e,false);
         Array.prototype.forEach.call(document.querySelectorAll('.dc-bug'),function(x){x.disabled=false;});
       }
-    });
-  });
+    })();
+  }
   async function poll(){try{var r=await fetch('/state',{cache:'no-store'});var s=await r.json();
     var on=Object.keys(s).filter(function(k){return s[k]===true;});
     document.getElementById('democtl-arm').textContent=on.length?(on.length+' armed'):'all clear';
