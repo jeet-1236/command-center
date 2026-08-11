@@ -679,6 +679,14 @@ setInterval(tick,2000);tick();
   #democtl-head{display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;font-weight:700;
     font-size:13px;color:#fff;background:linear-gradient(135deg,var(--accent),#7c3aed)}
   #democtl-arm{margin-left:auto;font-weight:500;opacity:.9;font-size:11px}
+  #democtl-min{width:22px;height:22px;padding:0;line-height:1;border-radius:6px;flex:0 0 auto;
+    background:var(--surface-3);color:var(--text);border:1px solid var(--line,#2a3446);
+    font:700 14px/1 var(--sans);cursor:pointer}
+  #democtl-min:hover{border-color:var(--accent);color:#dbe9ff}
+  #democtl .dc-bug{background:var(--surface-3);color:var(--text);border-color:var(--line,#2a3446);
+    text-align:left;font-weight:500;font-size:11.5px;padding:7px 9px}
+  #democtl .dc-bug:hover{border-color:var(--accent);color:#dbe9ff}
+  #democtl .dc-bug:disabled{opacity:.5;cursor:not-allowed}
   #democtl-body{padding:11px 12px;display:flex;flex-direction:column;gap:7px;overflow-y:auto;min-height:0}
   #democtl.min #democtl-body{display:none}
   #democtl #dc-pr{font-size:11px;line-height:1.4}
@@ -697,7 +705,7 @@ setInterval(tick,2000);tick();
   #democtl #dc-msg{font-size:11px;min-height:14px;line-height:1.35;color:var(--ok-text)}
 </style>
 <div id="democtl">
-  <div id="democtl-head" title="click to collapse"><span>🎬 Demo Controls</span><span id="democtl-arm">—</span></div>
+  <div id="democtl-head" title="click to collapse"><span>🎬 Demo Controls</span><span id="democtl-arm">—</span><button id="democtl-min" title="Minimise / restore" aria-label="Minimise panel">–</button></div>
   <div id="democtl-body">
     <div class="hint"><b>1.</b> Arm a bug → <b>2.</b> Send to AgentForge → <b>3.</b> approve in the console → <b>4.</b> watch it heal → <b>5.</b> Reset.</div>
     <div class="lbl">1 · Arm a bug</div>
@@ -707,6 +715,12 @@ setInterval(tick,2000);tick();
     <div class="lbl">2 · Run it</div>
     <button id="dc-send" class="dc-send">▶ Send armed bug to AgentForge</button>
     <a class="dc-link" id="dc-console" href="#" target="_blank" rel="noopener">3 · Open console to approve →</a>
+    <div class="lbl">Or — send one code defect</div>
+    <button class="dc-bug" data-bug="billing">💵 Invoice is a cent short of its lines</button>
+    <button class="dc-bug" data-bug="idempotency">🔁 A retry charged the customer twice</button>
+    <button class="dc-bug" data-bug="onhold">⏸ SLA counts time spent waiting on the customer</button>
+    <button class="dc-bug" data-bug="sla_clock">📅 SLA clock runs over the weekend</button>
+    <button class="dc-bug" data-bug="exports">🔤 Accented names cut off in the export</button>
     <div class="lbl">Or — find bugs nobody reported</div>
     <button id="dc-sweep" class="dc-send" style="background:var(--surface-3);border-color:var(--accent)">🔍 Sweep the codebase for unreported defects</button>
     <div id="dc-sweep-out"></div>
@@ -825,8 +839,73 @@ setInterval(tick,2000);tick();
     var d=await ccpost('/admin/reset',null);
     flash(d.ok?'✓ Reset — every panel healthy again':'Reset failed',d.ok);
   });
+  function setMin(on){
+    var p=document.getElementById('democtl'); p.classList.toggle('min',on);
+    document.getElementById('democtl-min').textContent = on ? '+' : '–';
+  }
   document.getElementById('democtl-head').addEventListener('click',function(){
-    document.getElementById('democtl').classList.toggle('min');});
+    setMin(!document.getElementById('democtl').classList.contains('min'));});
+  // an explicit control: the panel was collapse-on-click-anywhere, which nobody discovers mid-demo
+  document.getElementById('democtl-min').addEventListener('click',function(ev){
+    ev.stopPropagation();
+    setMin(!document.getElementById('democtl').classList.contains('min'));});
+
+  // ── send ONE code defect ─────────────────────────────────────────────────────────────
+  // Symptom-only on purpose: the ticket never names the file or the function, so localization and root cause
+  // are genuinely the agents' work rather than something the demo handed them.
+  var CODE_BUGS={
+    billing:{title:'Invoice total is one cent short of the line items',
+      details:'Finance reconciliation is failing: an invoice with ten $0.10 lines totals $0.99 instead of $1.00, so the invoice does not match the sum of its own lines. It only shows up on invoices with many small lines.'},
+    idempotency:{title:'A customer was charged twice for a single purchase',
+      details:'A customer says one purchase appears twice on their statement. Our logs show the client timed out and retried the same request, and both attempts were applied to the ledger.'},
+    onhold:{title:'We are recording SLA breaches for tickets that were waiting on the customer',
+      details:'Tickets parked awaiting a reply from the customer are still burning their resolution target, so the desk is posting breaches for time it could not do anything about.'},
+    sla_clock:{title:'Tickets raised on a Friday afternoon breach over the weekend',
+      details:'Our support hours are 09:00-17:00 Monday to Friday, but a ticket opened late on Friday is already breached by Monday morning even though nobody was working. The countdown appears to run overnight and at weekends.'},
+    exports:{title:'Accented account names are cut off mid-character in the CSV export',
+      details:"When we export the accounts list, names like 'Jose Alvarez' with accents come out mangled and shorter than the ten characters the column allows. Plain ASCII names look fine."}
+  };
+  Array.prototype.forEach.call(document.querySelectorAll('.dc-bug'),function(b){
+    b.addEventListener('click',async function(){
+      var t=CODE_BUGS[b.getAttribute('data-bug')]; if(!t)return;
+      Array.prototype.forEach.call(document.querySelectorAll('.dc-bug'),function(x){x.disabled=true;});
+      flash('Filing “'+t.title.slice(0,38)+'…” to AgentForge…'); setpr('');
+      try{
+        var lr=await fetch(PLATFORM+'/login',{method:'POST',headers:{'content-type':'application/json'},
+          body:JSON.stringify({user:'developer',password:'developer'})});
+        var tok=(await lr.json()).token, AUTH={'authorization':'Bearer '+tok};
+        var tr=await fetch(PLATFORM+'/tickets',{method:'POST',
+          headers:{'content-type':'application/json','authorization':'Bearer '+tok},
+          body:JSON.stringify({source:'manual',type:'bug',repo:'jeet-1236/agentforge-commandcenter',ref:'main',
+                               title:t.title,details:t.details})});
+        var tid=(await tr.json()).id;
+        flash('✓ Filed — agents are working on it');
+        if(_poll)clearInterval(_poll);
+        _poll=setInterval(async function(){
+          try{
+            var tk=await (await fetch(PLATFORM+'/tickets/'+tid,{headers:AUTH})).json();
+            var runs=await (await fetch(PLATFORM+'/runs?item_id='+tid,{headers:AUTH})).json();
+            var r=(runs&&runs.length)?runs[0]:(runs&&runs.runs&&runs.runs[0])||{};
+            var rc=(r.steps||[]).filter(function(x){return x.agent==='root_cause';})[0];
+            var f=rc&&rc.detail&&rc.detail.file?(' · '+String(rc.detail.file).split('/').pop()):'';
+            flash((tk.status||'working')+f);
+            if(r.pr_url)setpr(r.pr_url);
+            if(['pr_open','resolved','failed','needs_triage'].indexOf(tk.status)>=0){
+              clearInterval(_poll);_poll=null;
+              Array.prototype.forEach.call(document.querySelectorAll('.dc-bug'),function(x){x.disabled=false;});
+              var done = tk.status==='pr_open' ? ('✓ Fixed'+f+' — pull request opened')
+                        : tk.status==='failed' ? ('⚠ Handed to an engineer'+f)
+                        : tk.status;
+              flash(done, tk.status!=='failed');
+            }
+          }catch(e){}
+        },5000);
+      }catch(e){
+        flash('Failed: '+e,false);
+        Array.prototype.forEach.call(document.querySelectorAll('.dc-bug'),function(x){x.disabled=false;});
+      }
+    });
+  });
   async function poll(){try{var r=await fetch('/state',{cache:'no-store'});var s=await r.json();
     var on=Object.keys(s).filter(function(k){return s[k]===true;});
     document.getElementById('democtl-arm').textContent=on.length?(on.length+' armed'):'all clear';
