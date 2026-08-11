@@ -707,6 +707,9 @@ setInterval(tick,2000);tick();
     <div class="lbl">2 · Run it</div>
     <button id="dc-send" class="dc-send">▶ Send armed bug to AgentForge</button>
     <a class="dc-link" id="dc-console" href="#" target="_blank" rel="noopener">3 · Open console to approve →</a>
+    <div class="lbl">Or — find bugs nobody reported</div>
+    <button id="dc-sweep" class="dc-send" style="background:var(--surface-3);border-color:var(--accent)">🔍 Sweep the codebase for unreported defects</button>
+    <div id="dc-sweep-out"></div>
     <button id="dc-reset" class="dc-reset">↺ Reset / heal everything</button>
     <div id="dc-msg"></div>
     <div id="dc-pr"></div>
@@ -748,6 +751,37 @@ setInterval(tick,2000);tick();
       var d=await ccpost('/admin/scenario',{fault:f,on:true});
       flash(d.ok?'✓ Armed — now click “Send to AgentForge”':('Error: '+(d.error||'failed')),d.ok);
     });
+  });
+  // PROACTIVE SWEEP — no bug is armed by hand: AgentForge runs the repository's OWN test suite, turns every
+  // broken expectation nobody has filed into a ticket, and those tickets flow through the normal code lane.
+  // Uses the operator login (same as "Send to AgentForge") so no service secret is ever exposed to the page.
+  document.getElementById('dc-sweep').addEventListener('click',async function(){
+    var out=document.getElementById('dc-sweep-out');
+    this.disabled=true; flash('Sweeping the codebase — running its own tests…');
+    out.innerHTML='<div style="opacity:.75;font-size:11px;margin-top:6px">scanning…</div>';
+    try{
+      var lr=await fetch(PLATFORM+'/login',{method:'POST',headers:{'content-type':'application/json'},
+        body:JSON.stringify({user:'developer',password:'developer'})});
+      var tok=(await lr.json()).token;
+      var r=await fetch(PLATFORM+'/scan/defects',{method:'POST',
+        headers:{'content-type':'application/json','authorization':'Bearer '+tok},
+        body:JSON.stringify({repos:['jeet-1236/agentforge-commandcenter']})});
+      var d=await r.json();
+      var filed=(d.filed||[]), dedup=(d.deduped||[]);
+      if(filed.length){
+        flash('✓ Found '+filed.length+' defect(s) nobody reported — fixing them now',true);
+        out.innerHTML='<div style="margin-top:8px;font-size:11px;line-height:1.7">'+
+          filed.map(function(f){return '• '+f.title.replace('Unreported defect: ','');}).join('<br>')+
+          '<div style="margin-top:6px;opacity:.7">Watch them in the console → each opens a pull request.</div></div>';
+      }else if(dedup.length){
+        flash('Already filed '+dedup.length+' defect(s) — reset the platform to run this again',false);
+        out.innerHTML='<div style="margin-top:8px;font-size:11px;opacity:.75">These defects are already open as tickets (deduped).</div>';
+      }else{
+        flash('No unreported defects found — the codebase is clean',true);
+        out.innerHTML='';
+      }
+    }catch(e){ flash('Sweep failed: '+e,false); out.innerHTML=''; }
+    this.disabled=false;
   });
   document.getElementById('dc-send').addEventListener('click',async function(){
     var s={};try{s=await (await fetch('/state',{cache:'no-store'})).json();}catch(e){}
