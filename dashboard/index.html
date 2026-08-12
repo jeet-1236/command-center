@@ -65,7 +65,7 @@
   .agfchip .spin{width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);animation:pulse2 1.1s infinite}
   @keyframes pulse2{0%,100%{opacity:1}50%{opacity:.35}}
 
-  .view{padding:22px;padding-bottom:130px;overflow:auto;flex:1;min-height:0}   /* clearance so content scrolls above the Demo Controls panel */
+  .view{padding:22px;overflow:auto;flex:1;min-height:0}
   .viewhead{display:flex;align-items:baseline;gap:12px;margin:0 2px 16px}
   .viewhead h2{margin:0;font-size:20px;font-weight:680;letter-spacing:-.2px}
   .viewhead .src{font-size:12px;color:var(--text-3)}
@@ -145,6 +145,54 @@
   .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
   .muted{color:var(--text-3)}
 
+  /* live app checks — the four L2 code incidents, shown by RUNNING commandcenter/*.py (see sidecar/livechecks.py) */
+  .chk{border-left:3px solid var(--ok)}
+  .chk.bad{border-left-color:var(--crit)}
+  .chk .cat{font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text-3)}
+  .chk .ttl{font-size:13.5px;font-weight:640;margin:5px 0 2px}
+  .chk .what{color:var(--text-2);font-size:12px;margin-bottom:10px}
+  .kv{display:grid;grid-template-columns:74px 1fr;gap:4px 10px;font-size:12px;align-items:baseline}
+  .kv .k{color:var(--text-3);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  .kv .v{font-family:var(--mono);word-break:break-word}
+  .kv .v.want{color:var(--ok-text)}
+  .kv .v.got-bad{color:#ff8983}
+  .kv .v.got-ok{color:var(--ok-text)}
+  .chk .src{margin-top:10px;padding-top:9px;border-top:1px solid var(--border);font-size:11.5px;color:var(--text-3);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+
+  /* who is working on it — the other half of the story: reported → AgentForge working → PR → deployed */
+  .chk.working{border-left-color:var(--accent)}
+  .chk.review{border-left-color:var(--warn)}
+  .stage{display:flex;align-items:center;gap:9px;margin-top:10px;padding:9px 11px;border-radius:var(--r-sm);
+         background:var(--surface-2);border:1px solid var(--border);font-size:12.5px}
+  .stage.working{background:var(--accent-soft);border-color:rgba(59,130,246,.4);color:#dbe9ff}
+  .stage.review{background:var(--warn-soft);border-color:rgba(210,153,34,.4);color:#f0c85f}
+  .stage.resolved{background:var(--ok-soft);border-color:rgba(63,185,80,.32);color:var(--ok-text)}
+  .stage.escalated{background:var(--crit-soft);border-color:rgba(248,81,73,.4);color:#ff8983}
+  .stage.unreported{color:var(--text-3)}
+  .stage b{font-weight:640}
+  .stage .tid{margin-left:auto;font-family:var(--mono);font-size:11px;opacity:.75;white-space:nowrap}
+  .stage a{color:inherit}
+  /* the working indicator: three dots that actually move, so "in progress" reads at a glance across a room */
+  .dots{display:inline-flex;gap:3px;flex:none}
+  .dots i{width:5px;height:5px;border-radius:50%;background:currentColor;animation:bounce 1.1s infinite}
+  .dots i:nth-child(2){animation-delay:.15s}.dots i:nth-child(3){animation-delay:.3s}
+  @keyframes bounce{0%,60%,100%{opacity:.25;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
+  @media(prefers-reduced-motion:reduce){.dots i{animation:none;opacity:.7}}
+
+  /* the two forms the audience types into */
+  .form{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:4px 0 10px}
+  .inp{background:var(--surface-2);border:1px solid var(--border-2);border-radius:var(--r-sm);color:var(--text);
+       padding:8px 11px;font-size:13px;font-family:inherit;min-width:150px;flex:1}
+  .inp:focus{outline:2px solid var(--accent-soft);outline-offset:0;border-color:var(--accent)}
+  .btn{background:var(--accent);color:#fff;border:0;border-radius:var(--r-sm);padding:8px 15px;font-size:13px;
+       font-weight:620;cursor:pointer;font-family:inherit}
+  .btn:hover{background:var(--accent-2)}
+  .btn.ghost{background:var(--surface-2);color:var(--text-2);border:1px solid var(--border-2)}
+  .resp{border-radius:var(--r-sm);padding:10px 12px;font-size:12.5px;font-family:var(--mono);border:1px solid;word-break:break-word}
+  .resp.ok{color:var(--ok-text);background:var(--ok-soft);border-color:rgba(63,185,80,.3)}
+  .resp.bad{color:#ff8983;background:var(--crit-soft);border-color:rgba(248,81,73,.35)}
+  .resp.idle{color:var(--text-3);background:var(--surface-2);border-color:var(--border)}
+
   #tooltip{position:fixed;z-index:50;pointer-events:none;background:#0b0f14;border:1px solid var(--border-2);border-radius:8px;padding:8px 11px;font-size:12px;box-shadow:0 6px 24px rgba(0,0,0,.5);display:none;font-variant-numeric:tabular-nums}
   #tooltip .tt-t{color:var(--text-3);font-size:10.5px;margin-bottom:3px}
   #tooltip .tt-v{font-family:var(--mono);font-weight:600;font-size:13px}
@@ -200,27 +248,13 @@ function track(name,init){SERIES[name]=Array.from({length:N},()=>init);CUR[name]
  ['open_tk',12],['sla',2]].forEach(([n,v])=>track(n,v));
 
 let FLAGS={}, everBad={}, feed=[], lastFlags=null, agfState='idle', agfSince=0, connected=true;
-// CODE-DEFECT PREVIEW (client-side only — nothing is filed, nothing on the server changes).
-// Arming one makes the dashboard show the WRONG number the shipped defect actually produces, so an audience
-// SEES the symptom before anyone raises a ticket. Values are the real outputs of the buggy functions.
-let DEFECT=null;
-const DEFECT_KPI={
-  billing:{lab:'Invoice #4821',val:'$0.99',unit:'≠ $1.00 of lines',
-    sym:'Invoice total disagrees with the sum of its own lines'},
-  idempotency:{lab:'Charged · 1 purchase',val:'$50.00',unit:'≠ $25.00',
-    sym:'A retried request charged the customer twice'},
-  onhold:{lab:'SLA counted',val:'660',unit:'min · ≠ 60',
-    sym:'Time awaiting the customer is being charged to the desk'},
-  sla_clock:{lab:'Fri 16:00 ticket',val:'BREACHED',unit:'≠ on track',
-    sym:'The SLA clock ran overnight and through the weekend'},
-  exports:{lab:'Export · name column',val:'José Álv',unit:'≠ José Álvar',
-    sym:'Accented names are cut mid-character in the export'},
-  ui_format:{lab:'Pipeline value',val:'$1840000',unit:'overflows · ≠ $1.84M',
-    sym:'The KPI tile renders a raw seven-digit number instead of $1.84M'}
-};
+/* the live application checks (GET /api/checks) — each one RUNS a function in commandcenter/*.py */
+let CHECKS=[], checksFailing=0, lastChecks=null;
+/* the colour commandcenter/theme.py says a healthy status is — this dashboard paints its greens with it */
+let OK_COLOR='#3fb950';
 const FAULTS=['crm_sync_stalled','crm_vendor_down','crm_credential_expired','monitor_alert_storm','crm_delivery_stuck','account_mismatch',
-              'code_pipeline','code_sla','code_finops','code_access','code_accent'];
-const CODE_FAULTS=['code_pipeline','code_sla','code_finops','code_access','code_accent'];   // L3 code defects (fixed via a PR, not an L2 action)
+              'code_pipeline','code_accent'];
+const CODE_FAULTS=['code_pipeline','code_accent'];   // L3 code defects (fixed via a PR, not an L2 action)
 
 function targets(F){
   const syncFail=F.crm_vendor_down||F.crm_credential_expired;
@@ -228,7 +262,7 @@ function targets(F){
   const anyInc=FAULTS.some(f=>F[f]);
   // support-affecting incidents only (runtime faults + the SLA code defect) — NOT the other code defects,
   // which live on Revenue/Cloud/Security. Keeps the Support surface's ticket/SLA load consistent with domHealth.
-  const supInc=FAULTS.some(f=>F[f]&&!f.startsWith('code_'))||F.code_sla;
+  const supInc=FAULTS.some(f=>F[f]&&!f.startsWith('code_'));
   return {
     pay_err:  F.monitor_alert_storm?14:.2,
     pay_p95:  F.monitor_alert_storm?2200:190,
@@ -273,9 +307,12 @@ function domHealth(F){
     overview:'',
     system:  F.monitor_alert_storm?'crit':F.crm_vendor_down?'warn':'ok',
     revenue: sf?'crit':(F.crm_sync_stalled||F.crm_delivery_stuck||F.account_mismatch||F.code_pipeline)?'warn':'ok',
-    support: (FAULTS.some(f=>F[f]&&!f.startsWith('code_'))||F.code_sla)?'warn':'ok',
-    cloud:   F.code_finops?'warn':'ok',
-    security:F.crm_credential_expired?'crit':F.code_access?'warn':'ok'
+    support: FAULTS.some(f=>F[f]&&!f.startsWith('code_'))?'warn':'ok',
+    cloud:   'ok',
+    security:F.crm_credential_expired?'crit':'ok',
+    // The live app checks are not derived from a flag — they are whatever commandcenter/*.py actually did
+    // on the last poll. A failing one is a real defect running in production right now.
+    liveapp: CHECKS.length&&checksFailing?'crit':'ok'
   };
 }
 const worst=h=>['crit','warn','ok'].find(l=>Object.values(h).includes(l))||'ok';
@@ -290,9 +327,6 @@ const INC={
   account_mismatch:{dom:'Revenue',sev:'warn',raise:'1 account\'s stored balance disagrees with the system of record — ACC-4471 off by 150,000 while the portfolio total reads normal',fix:'Pulled the account ID from the ticket, diffed stored vs authoritative, and corrected just that one record — no other accounts touched.'},
   // L3 CODE DEFECTS — real bugs in the commandcenter/*.py backend, fixed by the L3 lane (reproduce → fix → PR → deploy), not an L2 action.
   code_pipeline:{dom:'Revenue',sev:'warn',kind:'code',raise:'Code defect · pipeline.py — pipeline value overstated: multi-currency deals counted once per currency ($2.04M shown vs $1.84M actual)',fix:'AgentForge reproduced it, fixed the rollup to count each deal once, ran the tests, and opened a PR — the value corrects on deploy.'},
-  code_sla:{dom:'Support',sev:'warn',kind:'code',raise:'Code defect · sla.py — a ticket exactly at the SLA warning threshold isn\'t flagged at-risk, so a breach slipped the early warning',fix:'AgentForge reproduced it, fixed the boundary check (< → <=), ran the tests, and opened a PR.'},
-  code_finops:{dom:'Cloud Spend',sev:'warn',kind:'code',raise:'Code defect · finops.py — the month-end projection over-shoots early in the month, firing a false "over budget" alert',fix:'AgentForge reproduced it, fixed the elapsed-days divisor, ran the tests, and opened a PR.'},
-  code_access:{dom:'Access & Security',sev:'warn',kind:'code',raise:'Code defect · access.py — a departed employee who was recently active isn\'t flagged in the access review',fix:'AgentForge reproduced it, fixed the and→or condition, ran the tests, and opened a PR.'},
   code_accent:{dom:'System health',sev:'warn',kind:'code',raise:'Code defect · theme.py — every HEALTHY status signal (the Operational pill, the green service-health dots, the ok KPI stripes) renders the danger red (#f85149) instead of the brand green, so a fully healthy system reads as critical',fix:'AgentForge reproduced it (test_theme.py), restored the healthy green, ran the tests, and opened a PR — the health indicators repaint green on deploy.'}
 };
 function pushFeed(kind,dom,text){
@@ -373,7 +407,8 @@ const TABS=[
   {k:'revenue',nm:'Revenue / Deals',ic:'▲',src:'Twenty CRM'},
   {k:'support',nm:'Support',ic:'✉',src:'Freshdesk'},
   {k:'cloud',nm:'Cloud Spend',ic:'☁',src:'FinOps'},
-  {k:'security',nm:'Access & Security',ic:'⚿',src:'IAM'}
+  {k:'security',nm:'Access & Security',ic:'⚿',src:'IAM'},
+  {k:'liveapp',nm:'Live app checks',ic:'⚙',src:'commandcenter/*.py — live'}
 ];
 let active='overview';
 
@@ -385,6 +420,7 @@ function skeleton(k){
   if(k==='support')  return sup_sk();
   if(k==='cloud')    return cloud_sk();
   if(k==='security') return sec_sk();
+  if(k==='liveapp')  return live_sk();
 }
 
 /* Overview */
@@ -402,7 +438,7 @@ function ov_sk(){
 }
 function ov_up(){
   const F=FLAGS,h=domHealth(F),t=targets(F);
-  const gs=worst(h), any=t._anyInc;
+  const gs=worst(h), any=t._anyInc||checksFailing>0;
   const upPct=(100-(F.monitor_alert_storm?0.4:0)-(F.crm_vendor_down?0.15:0)).toFixed(2);
   $('ov-kpis').innerHTML=[
     kpi('Global uptime',upPct,'%',{state:gs,stripe:gs==='ok'?'acc':gs,spark:SERIES.req_rate,sparkCol:'var(--accent)'}),
@@ -411,13 +447,10 @@ function ov_up(){
     kpi('Cloud spend',(CUR.spend_rate*24/1000).toFixed(1)+'k','/day',{stripe:'acc'}),
     kpi('Expired creds',fmt(F.crm_credential_expired?1:0),'',{state:F.crm_credential_expired?'crit':'ok',stripe:F.crm_credential_expired?'crit':'acc'}),
     kpi('Dead-letter Q',fmt(CUR.dlq),'',{state:CUR.dlq>0?'warn':'ok',stripe:CUR.dlq>0?'warn':'acc'})
-  ].concat(DEFECT&&DEFECT_KPI[DEFECT]?[kpi(DEFECT_KPI[DEFECT].lab,DEFECT_KPI[DEFECT].val,DEFECT_KPI[DEFECT].unit,
-      {state:'crit',stripe:'crit'})]:[]).join('');
+  ].join('');
   const bn=$('ov-banner');
   if(F.monitor_alert_storm){bn.innerHTML=banner('crit','Major incident in progress','A real service outage is being handled amid an alert storm. AgentForge is engaged.');}
   else if(any){bn.innerHTML=banner('warn',(activeIncidents().length)+' active incident'+(activeIncidents().length>1?'s':'')+' — AgentForge engaged','Detected from live telemetry. Follow it through the AgentForge console; this dashboard heals when it resolves.');}
-  else if(DEFECT&&DEFECT_KPI[DEFECT]){bn.innerHTML=banner('crit','Data integrity issue — '+DEFECT_KPI[DEFECT].sym,
-    'Every monitor is green, yet the number above is wrong. Nobody has reported it. Raise it in the AgentForge console and watch it get fixed.');}
   else{bn.innerHTML=banner('ok','All systems operational','No active incidents. Every domain is within its SLOs.');}
   $('ov-dh-sum').textContent=Object.values(h).filter(x=>x==='crit'||x==='warn').length+' need attention';
   $('ov-domains').innerHTML=TABS.slice(1).map(tb=>{const s=h[tb.k];return `<div class="svc ${s==='crit'?'bad':s==='warn'?'warnb':''}"><span class="ic ${s}" style="width:22px;height:22px;border-radius:6px;display:grid;place-items:center">${iconFor(s)}</span><div><div class="nm">${tb.nm}</div><div class="mt">${tb.src}</div></div><div class="rt">${statPill(s,s==='ok'?'Healthy':s==='warn'?'Degraded':'Incident')}</div></div>`}).join('');
@@ -548,10 +581,10 @@ function sup_sk(){
   </div>`;
 }
 function sup_up(){
-  const F=FLAGS,any=FAULTS.some(f=>F[f]&&!f.startsWith('code_'))||F.code_sla;   // support-affecting only
+  const F=FLAGS,any=FAULTS.some(f=>F[f]&&!f.startsWith('code_'));   // support-affecting only
   $('sup-kpis').innerHTML=[
     kpi('Open tickets',fmt(CUR.open_tk),'',{state:CUR.open_tk>13?'warn':'ok',spark:SERIES.open_tk,stripe:CUR.open_tk>13?'warn':'acc'}),
-    kpi('SLA at risk',fmt(F.code_sla?1:CUR.sla),'',{state:(F.code_sla||CUR.sla>2)?'warn':'ok',stripe:(F.code_sla||CUR.sla>2)?'warn':'acc'}),
+    kpi('SLA at risk',fmt(CUR.sla),'',{state:CUR.sla>2?'warn':'ok',stripe:CUR.sla>2?'warn':'acc'}),
     kpi('CSAT','4.6','/5',{state:'ok',stripe:'acc'}),
     kpi('First response','12','min',{state:'ok',stripe:'acc'})
   ].join('');
@@ -576,7 +609,7 @@ function cloud_up(){
   $('cl-kpis').innerHTML=[
     kpi('MTD spend',money(spend),'',{state:spend/budget>.85?'warn':'ok',stripe:'acc'}),
     kpi('Budget used',(spend/budget*100).toFixed(0),'%',{state:spend/budget>.85?'warn':'ok',stripe:spend/budget>.85?'warn':'acc'}),
-    kpi('Forecast',money(F.code_finops?78000:Math.round(spend*1.24)),'',{state:F.code_finops?'warn':'ok',stripe:F.code_finops?'warn':'acc'}),
+    kpi('Forecast',money(Math.round(spend*1.24)),'',{state:'ok',stripe:'acc'}),
     kpi('Spend rate',money(CUR.spend_rate),'/hr',{state:F.monitor_alert_storm?'warn':'ok',spark:SERIES.spend_rate,stripe:F.monitor_alert_storm?'warn':'acc'})
   ].join('');
   drawArea($('cl-sp'),SERIES.spend_rate,{color:'var(--s1)',fill:fillFor('cl-sp'),fmt:v=>money(v)+'/hr'});$('cl-sp').style.color='var(--s1)';
@@ -601,7 +634,7 @@ function sec_up(){
     kpi('Expired creds',F.crm_credential_expired?'1':'0','',{state:F.crm_credential_expired?'crit':'ok',stripe:F.crm_credential_expired?'crit':'acc'}),
     kpi('Failed auth',CUR.auth_fail.toFixed(1),'%',{state:CUR.auth_fail>2?'crit':'ok',spark:SERIES.auth_fail,sparkCol:'var(--crit)',stripe:CUR.auth_fail>2?'crit':'acc'}),
     kpi('MFA coverage','98','%',{state:'ok',stripe:'acc'}),
-    kpi('Access review',F.code_access?'1':'0',F.code_access?'miss':'clean',{state:F.code_access?'warn':'ok',stripe:F.code_access?'warn':'acc'})
+    kpi('Access review','0','clean',{state:'ok',stripe:'acc'})
   ].join('');
   drawArea($('sec-af'),SERIES.auth_fail,{color:'var(--crit)',fill:fillFor('sec-af'),zero:true,fmt:v=>v.toFixed(2)+'%'});$('sec-af').style.color='var(--crit)';
   $('sec-af-cur').textContent=CUR.auth_fail.toFixed(2)+'%';
@@ -616,6 +649,116 @@ function sec_up(){
   $('sec-cr-sum').textContent=(F.crm_credential_expired?'1 expired · ':'')+'1 expiring';
 }
 
+/* ── Live app checks ──────────────────────────────────────────────────────────────────────────────────────
+   Every other tab on this dashboard draws a picture of a fault flag. This one runs the application. Each
+   card calls a real function in commandcenter/*.py with a real input and prints what came back beside what
+   the module's own contract says should have come back — so when AgentForge's reviewed patch is deployed on
+   approval, the card turns green because the code is right, not because someone cleared a boolean. */
+function live_sk(){
+  return `<div id="lv-banner"></div>
+  <div class="grid g2" style="margin-bottom:14px" id="lv-cards"></div>
+  <div class="grid g2">
+    <div class="card"><div class="hd"><h3>New CRM contact</h3><span class="muted">POST /api/contacts</span></div>
+      <p class="muted" style="margin:0 0 10px;font-size:12px">Saved through the app's own validation rule (commandcenter/contacts.py).</p>
+      <div class="form">
+        <input class="inp" id="lv-name" value="Siobhán O'Brien" placeholder="Full name" autocomplete="off">
+        <input class="inp" id="lv-phone" value="+44 20 7946 0958" placeholder="Phone" autocomplete="off">
+      </div>
+      <div class="form">
+        <button class="btn" onclick="lvContact()">Save contact</button>
+        <button class="btn ghost" onclick="lvFill('us')">US example</button>
+        <button class="btn ghost" onclick="lvFill('intl')">International example</button>
+      </div>
+      <div class="resp idle" id="lv-contact-out">Not submitted yet.</div></div>
+    <div class="card"><div class="hd"><h3>Add note to ticket</h3><span class="muted">POST /api/notes</span></div>
+      <p class="muted" style="margin:0 0 10px;font-size:12px">An empty note box sends <span class="mono">"notes": null</span> — the case the integration is hitting (commandcenter/intake.py).</p>
+      <div class="form">
+        <input class="inp" id="lv-ticket" value="TCK-4471" placeholder="Ticket id" autocomplete="off">
+        <input class="inp" id="lv-note" value="" placeholder="Note (leave empty to reproduce)" autocomplete="off">
+      </div>
+      <div class="form"><button class="btn" onclick="lvNote()">Add note</button></div>
+      <div class="resp idle" id="lv-note-out">Not submitted yet.</div></div>
+  </div>`;
+}
+function live_up(){
+  const n=CHECKS.length, bad=checksFailing;
+  const bn=$('lv-banner');
+  if(!n){bn.innerHTML=banner('warn','Live checks unavailable','The sidecar did not answer GET /api/checks.');}
+  else if(bad){bn.innerHTML=banner('crit',bad+' of '+n+' live checks failing',
+    'These run the application\'s own code on every poll. They turn green when a correct version of that code is on disk — which is what deploying the approved fix does.');}
+  else{bn.innerHTML=banner('ok','All '+n+' live checks passing','Every incident case now returns what the module\'s contract says it should.');}
+  $('lv-cards').innerHTML=CHECKS.map(c=>`<div class="card chk ${c.ok?'':'bad'} ${stageOf(c)}">
+    <div class="hd"><span class="cat">${c.category}</span>${statPill(c.ok?'ok':'crit',c.ok?'PASS':'FAIL')}</div>
+    <div class="ttl">${c.title}</div>
+    <div class="what">${c.what}</div>
+    <div class="kv">
+      <span class="k">Input</span><span class="v">${esc(c.input)}</span>
+      <span class="k">Expected</span><span class="v want">${esc(c.expected)}</span>
+      <span class="k">Actual</span><span class="v ${c.ok?'got-ok':'got-bad'}">${esc(c.actual)}</span>
+    </div>
+    ${stageRow(c)}
+    <div class="src"><span class="mono">${c.module}</span><span>${c.surface}</span></div></div>`).join('');
+}
+/* The other half of the story. A card that only says PASS/FAIL shows a broken app; this shows a broken app
+   that somebody reported and that something is being done about — reported → AgentForge working → pull
+   request waiting for a human → deployed. Read from the platform's own ticket queue (sidecar /api/checks). */
+function stageOf(c){return (c.ticket&&c.ticket.stage)||(c.ok?'resolved':'unreported');}
+function stageRow(c){
+  const t=c.ticket; if(!t&&c.ok) return '';
+  const st=stageOf(c);
+  const icon={unreported:'○',reported:'✉',working:'',review:'⌛',resolved:'✓',escalated:'!'}[st]||'•';
+  const label=t?t.stage_label:(c.ok?'Fixed and deployed':'Not reported yet');
+  const dots=st==='working'?'<span class="dots"><i></i><i></i><i></i></span>':`<span>${icon}</span>`;
+  const right=t&&t.pr_url
+    ? `<span class="tid"><a href="${esc(t.pr_url)}" target="_blank" rel="noopener">pull request ↗</a></span>`
+    : (t&&t.id?`<span class="tid">ticket ${esc(t.id)}</span>`:'');
+  return `<div class="stage ${st}">${dots}<b>${esc(label)}</b>${right}</div>`;
+}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function lvFill(kind){
+  if(kind==='us'){$('lv-name').value='Dana White';$('lv-phone').value='555-018-2231';}
+  else{$('lv-name').value="Siobhán O'Brien";$('lv-phone').value='+44 20 7946 0958';}
+}
+async function lvContact(){
+  const out=$('lv-contact-out');out.className='resp idle';out.textContent='Saving…';
+  try{
+    const r=await fetch('/api/contacts',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({name:$('lv-name').value,phone:$('lv-phone').value})});
+    const d=await r.json();
+    out.className='resp '+(d.saved?'ok':'bad');
+    out.textContent=(d.saved?'✓ ':'✕ ')+d.message+(d.errors&&d.errors.length?'  [fields: '+d.errors.join(', ')+']':'');
+  }catch(e){out.className='resp bad';out.textContent='request failed: '+e;}
+}
+async function lvNote(){
+  const out=$('lv-note-out');out.className='resp idle';out.textContent='Posting…';
+  const note=$('lv-note').value;
+  // An empty box is sent as JSON null — exactly what the reporting integration sends.
+  const body={ticket_id:$('lv-ticket').value,notes:note===''?null:note};
+  try{
+    const r=await fetch('/api/notes',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+    const d=await r.json();
+    const ok=r.status<400;
+    out.className='resp '+(ok?'ok':'bad');
+    out.textContent=(ok?'✓ ':'✕ ')+'HTTP '+r.status+' — '+(d.crashed?('the endpoint crashed: '+d.exception)
+      :(ok?('note stored as "'+((d.body||{}).notes||'')+'"'):((d.body||{}).error||JSON.stringify(d.body))));
+  }catch(e){out.className='resp bad';out.textContent='request failed: '+e;}
+}
+async function pollChecks(){
+  try{
+    const r=await fetch('/api/checks',{cache:'no-store'});
+    const d=await r.json();
+    CHECKS=d.checks||[];checksFailing=d.failing|0;OK_COLOR=d.ok_color||OK_COLOR;
+  }catch(e){/* keep the last answer — a dropped poll is not a heal */}
+  // Timeline entries so the heal is visible from the Overview too, not only on this tab.
+  if(lastChecks){CHECKS.forEach(c=>{
+    const was=lastChecks[c.key];
+    if(was===undefined)return;
+    if(was&&!c.ok)pushFeed('raise','Live app · '+c.surface,'Code defect · '+c.module+' — '+c.title+': '+c.actual);
+    if(!was&&c.ok)pushFeed('resolve','Live app · '+c.surface,'Fix deployed by AgentForge — '+c.module+' now returns '+c.actual);
+  });}
+  lastChecks=Object.fromEntries(CHECKS.map(c=>[c.key,c.ok]));
+}
+
 /* ── feed rendering ── */
 function renderFeed(id){
   const el=$(id); if(!el)return;
@@ -626,7 +769,9 @@ function renderFeed(id){
     return `<div class="row"><div class="ic ${ic}">${f.kind==='raise'?'!':f.kind==='resolve'?'✓':'◆'}</div><div class="tx"><b>${f.dom}</b><p>${f.text}</p></div><div class="tm">${tm}</div></div>`;
   }).join('');
 }
-function activeIncidents(){return FAULTS.filter(f=>FLAGS[f]);}
+// An incident is an armed fault OR a live check that is currently failing — a 500 the app is really
+// answering with counts the same as a simulated one.
+function activeIncidents(){return FAULTS.filter(f=>FLAGS[f]).concat(CHECKS.filter(c=>!c.ok).map(c=>'check:'+c.key));}
 
 /* ── top chrome ── */
 function renderNav(){
@@ -654,7 +799,7 @@ function updateChrome(){
 }
 
 /* ── loop ── */
-const UP={overview:ov_up,system:sys_up,revenue:rev_up,support:sup_up,cloud:cloud_up,security:sec_up};
+const UP={overview:ov_up,system:sys_up,revenue:rev_up,support:sup_up,cloud:cloud_up,security:sec_up,liveapp:live_up};
 function go(k){if(!UP[k])k='overview';active=k;try{history.replaceState(null,'','#'+k);}catch(e){}renderNav();$('view').innerHTML=skeleton(k);UP[k]();updateChrome();}
 function diffFlags(F){
   if(lastFlags){FAULTS.forEach(f=>{
@@ -666,12 +811,15 @@ function diffFlags(F){
 async function tick(){
   try{const r=await fetch('/state',{cache:'no-store'});FLAGS=await r.json();connected=true;}
   catch(e){connected=false;/* keep last flags */}
-  // cc-code-5 (theme.py): the HEALTHY status colour IS the visible symptom. When code_accent is armed every
-  // "healthy" signal (the Operational pill, the green service dots, the ok KPI stripes) renders the danger RED —
-  // the dashboard looks like it is on fire even though every status is OK. It repaints to green the moment the fix
-  // deploys (flag cleared on approval). Mirrors theme.status_ok_color(): red #f85149 (bug) vs green #3fb950 (fixed).
+  await pollChecks();          // runs commandcenter/*.py — the only panel that is not a flag
+  // The HEALTHY colour is painted with whatever commandcenter/theme.py::status_ok_color() actually returns
+  // (the sidecar reports it on /api/checks). While that function returns the danger red, every "healthy"
+  // signal on this dashboard — the Operational pill, the green service dots, the ok KPI stripes — renders red
+  // and a completely healthy system reads as on fire. It repaints itself the moment a correct theme.py is
+  // deployed. Reading the real function rather than a flag is what makes the repaint proof of the fix.
   const _rs=document.documentElement.style;
-  if(FLAGS.code_accent){_rs.setProperty('--ok','#f85149');_rs.setProperty('--ok-soft','rgba(248,81,73,.13)');_rs.setProperty('--ok-text','#ff8983');}
+  const _red=(OK_COLOR||'').toLowerCase()!=='#3fb950';
+  if(_red){_rs.setProperty('--ok',OK_COLOR||'#f85149');_rs.setProperty('--ok-soft','rgba(248,81,73,.13)');_rs.setProperty('--ok-text','#ff8983');}
   else{_rs.setProperty('--ok','#3fb950');_rs.setProperty('--ok-soft','rgba(63,185,80,.13)');_rs.setProperty('--ok-text','#7ee39a');}
   FAULTS.forEach(f=>{if(FLAGS[f]!==undefined&&FLAGS[f])everBad[f]=true;});
   diffFlags(FLAGS);
@@ -689,321 +837,6 @@ renderNav();$('view').innerHTML=skeleton(active);UP[active]();updateChrome();clo
 try{window.addEventListener('hashchange',()=>{const k=location.hash.slice(1);if(UP[k])go(k);});}catch(e){}
 setInterval(clock,1000);
 setInterval(tick,2000);tick();
-</script>
-
-<!-- ═══════ DEMO CONTROLS — manager self-serve (arm + file to AgentForge + reset) ═══════ -->
-<style>
-  #democtl{position:fixed;right:16px;bottom:16px;z-index:9999;width:288px;max-width:calc(100vw - 32px);
-    max-height:calc(100vh - 32px);background:var(--surface-2);
-    border:1px solid var(--line,#2a3446);border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.5);
-    font-family:var(--sans);color:var(--text);overflow:hidden;display:flex;flex-direction:column}
-  #democtl-head{display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;font-weight:700;
-    font-size:13px;color:#fff;background:linear-gradient(135deg,var(--accent),#7c3aed)}
-  #democtl-arm{margin-left:auto;font-weight:500;opacity:.9;font-size:11px}
-  /* #democtl button (1-0-1) outranks #democtl-min (1-0-0), so this MUST be at least as specific or the
-     generic padding/width stretches it across the header. */
-  #democtl #democtl-min{box-sizing:border-box;width:24px;height:24px;min-width:24px;flex:0 0 24px;
-    padding:0;margin:0;line-height:22px;text-align:center;border-radius:6px;
-    background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.35);
-    font:700 15px/22px var(--sans);cursor:pointer;transition:background .15s}
-  #democtl #democtl-min:hover{background:rgba(255,255,255,.28)}
-  /* symptom card — what the USER sees when the defect bites */
-  #dc-symptom{display:none;margin-top:2px;border:1px solid var(--line,#2a3446);border-radius:8px;
-    background:var(--surface-2,#141b26);padding:9px 10px;font-size:11px;line-height:1.5}
-  #dc-symptom.show{display:block}
-  #dc-symptom .sy-t{font-weight:700;font-size:11px;margin-bottom:5px;color:var(--text)}
-  #dc-symptom .sy-ctx{color:var(--text-3,#8b98a9);margin-bottom:6px}
-  #dc-symptom .sy-row{display:flex;align-items:center;gap:7px;margin-top:3px;font-family:var(--mono,ui-monospace,monospace)}
-  #dc-symptom .sy-bad{color:#ff8983;font-weight:700}
-  #dc-symptom .sy-good{color:var(--ok-text,#3fb950);font-weight:700}
-  #dc-symptom .sy-tag{font-size:9px;letter-spacing:.04em;text-transform:uppercase;opacity:.75;
-    font-family:var(--sans);min-width:64px}
-  #democtl .dc-bug{background:var(--surface-3);color:var(--text);border-color:var(--line,#2a3446);
-    text-align:left;font-weight:500;font-size:11.5px;padding:7px 9px}
-  #democtl .dc-bug:hover{border-color:var(--accent);color:#dbe9ff}
-  #democtl .dc-bug:disabled{opacity:.5;cursor:not-allowed}
-  #democtl-body{padding:11px 12px;display:flex;flex-direction:column;gap:7px;overflow-y:auto;min-height:0}
-  #democtl.min #democtl-body{display:none}
-  #democtl #dc-pr{font-size:11px;line-height:1.4}
-  #democtl #dc-pr a{color:var(--accent-2);text-decoration:none;font-weight:700}
-  #democtl .hint{font-size:11px;color:var(--text-3,#8b98a9);line-height:1.45}
-  #democtl .lbl{font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-3,#8b98a9);margin-top:3px}
-  #democtl button,#democtl .dc-link{font:600 12px var(--sans);border-radius:8px;padding:8px 10px;
-    cursor:pointer;border:1px solid transparent;text-decoration:none;display:block;width:100%;box-sizing:border-box}
-  #democtl .dc-arm{background:var(--surface-3);color:var(--text);border-color:var(--line,#2a3446);text-align:left}
-  #democtl .dc-arm:hover{border-color:var(--accent);color:#dbe9ff}
-  #democtl .dc-arm.on{border-color:var(--accent);color:#dbe9ff;background:var(--accent-soft)}
-  #democtl .dc-send{background:linear-gradient(135deg,var(--accent),#7c3aed);color:#fff;text-align:center}
-  #democtl .dc-send:disabled{opacity:.5;cursor:not-allowed}
-  #democtl .dc-link{background:var(--accent-soft);color:var(--accent-2);border-color:rgba(59,130,246,.4);text-align:center}
-  #democtl .dc-reset{background:var(--ok-soft);color:var(--ok-text);border-color:rgba(63,185,80,.35);text-align:center}
-  #democtl #dc-msg{font-size:11px;min-height:14px;line-height:1.35;color:var(--ok-text)}
-</style>
-<div id="democtl">
-  <div id="democtl-head" title="click to collapse"><span>🎬 Demo Controls</span><span id="democtl-arm">—</span><button id="democtl-min" title="Minimise / restore" aria-label="Minimise panel">–</button></div>
-  <div id="democtl-body">
-    <div class="hint"><b>1.</b> Arm a bug → <b>2.</b> Send to AgentForge → <b>3.</b> approve in the console → <b>4.</b> watch it heal → <b>5.</b> Reset.</div>
-    <div class="lbl">1 · Arm a bug</div>
-    <button class="dc-arm" data-fault="code_pipeline">Pipeline value bug ($2.04M)</button>
-    <button class="dc-arm" data-fault="code_accent">Status-colour bug (all red)</button>
-    <button class="dc-arm" data-fault="crm_sync_stalled">CRM sync stalled (stale data)</button>
-    <div class="lbl">2 · Run it</div>
-    <button id="dc-send" class="dc-send">▶ Send armed bug to AgentForge</button>
-    <a class="dc-link" id="dc-console" href="#" target="_blank" rel="noopener">3 · Open console to approve →</a>
-    <div class="lbl">Or — send one code defect</div>
-    <button class="dc-bug" data-bug="billing">💵 Invoice is a cent short of its lines</button>
-    <button class="dc-bug" data-bug="idempotency">🔁 A retry charged the customer twice</button>
-    <button class="dc-bug" data-bug="onhold">⏸ SLA counts time spent waiting on the customer</button>
-    <button class="dc-bug" data-bug="sla_clock">📅 SLA clock runs over the weekend</button>
-    <button class="dc-bug" data-bug="exports">🔤 Accented names cut off in the export</button>
-    <button class="dc-bug" data-bug="ui_format">🖥 KPI tile shows $1840000 (front-end)</button>
-    <div id="dc-symptom"></div>
-    <a class="dc-link" id="dc-raise" href="#" target="_blank" rel="noopener" style="display:none">↗ Raise this ticket in the console</a>
-    <div class="lbl">Or — find bugs nobody reported</div>
-    <button id="dc-sweep" class="dc-send" style="background:var(--surface-3);border-color:var(--accent)">🔍 Sweep the codebase for unreported defects</button>
-    <div id="dc-sweep-out"></div>
-    <button id="dc-reset" class="dc-reset">↺ Reset / heal everything</button>
-    <div id="dc-msg"></div>
-    <div id="dc-pr"></div>
-  </div>
-</div>
-<script>
-(function(){
-  var params=new URLSearchParams(location.search);
-  var CONSOLE=params.get('console')||'https://agent-forge-three-gold.vercel.app';
-  var PLATFORM=params.get('platform')||'https://platform-production-3d8c.up.railway.app';
-  var MIRROR='jeet-1236/agentforge-commandcenter';
-  document.getElementById('dc-console').href=CONSOLE;
-  // per-bug ticket the Send button files (mirror repo → the code lane actually clones + opens a PR).
-  var TICKETS={
-    code_pipeline:{type:'bug',title:'Pipeline value overstated ($2.04M) — commandcenter/pipeline.py double-counts multi-currency deals',
-      details:'commandcenter/pipeline.py rolls up a multi-currency deal more than once, so Revenue Pipeline reads $2.04M instead of $1.84M. Fix the rollup so each deal is counted once.'},
-    code_accent:{type:'bug',title:'Healthy systems render danger-red — commandcenter/theme.py status colour',
-      details:'commandcenter/theme.py returns the danger red for the HEALTHY status instead of the brand green, so a healthy system reads as critical. Fix the status-colour mapping so a healthy state renders green.'},
-    crm_sync_stalled:{type:'bug',title:'CRM data stale ~45min but health lights all green — sync worker wedged',
-      details:'Operational incident (no code change): the CRM dashboard has not updated in ~45 minutes yet every monitor reads green (healthy-status trap). OUR CRM sync worker appears wedged. Diagnose and apply the reversible mitigation. Do not modify code.'}
-  };
-  var msg=document.getElementById('dc-msg');
-  var prel=document.getElementById('dc-pr');
-  function flash(t,ok){msg.textContent=t;msg.style.color=(ok===false)?'#ff8983':'var(--ok-text)';}
-  function setpr(url){
-    if(!url){prel.innerHTML='';return;}
-    var n=String(url).split('/').pop();
-    prel.innerHTML='🔗 PR #'+n+' — <a href="'+url+'" target="_blank" rel="noopener">View on GitHub →</a>';
-  }
-  var _poll=null;
-  async function ccpost(path,body){
-    try{var r=await fetch(path,{method:'POST',headers:{'content-type':'application/json'},body:body?JSON.stringify(body):null});
-      return await r.json();}catch(e){return {ok:false,error:String(e)};}
-  }
-  document.querySelectorAll('#democtl .dc-arm').forEach(function(b){
-    b.addEventListener('click',async function(){
-      var f=b.getAttribute('data-fault');
-      flash('Arming…');
-      var d=await ccpost('/admin/scenario',{fault:f,on:true});
-      flash(d.ok?'✓ Armed — now click “Send to AgentForge”':('Error: '+(d.error||'failed')),d.ok);
-    });
-  });
-  // PROACTIVE SWEEP — no bug is armed by hand: AgentForge runs the repository's OWN test suite, turns every
-  // broken expectation nobody has filed into a ticket, and those tickets flow through the normal code lane.
-  // Uses the operator login (same as "Send to AgentForge") so no service secret is ever exposed to the page.
-  document.getElementById('dc-sweep').addEventListener('click',async function(){
-    var out=document.getElementById('dc-sweep-out');
-    this.disabled=true; flash('Sweeping the codebase — running its own tests…');
-    out.innerHTML='<div style="opacity:.75;font-size:11px;margin-top:6px">scanning…</div>';
-    try{
-      var lr=await fetch(PLATFORM+'/login',{method:'POST',headers:{'content-type':'application/json'},
-        body:JSON.stringify({user:'developer',password:'developer'})});
-      var tok=(await lr.json()).token;
-      var r=await fetch(PLATFORM+'/scan/defects',{method:'POST',
-        headers:{'content-type':'application/json','authorization':'Bearer '+tok},
-        body:JSON.stringify({repos:['jeet-1236/agentforge-commandcenter']})});
-      var d=await r.json();
-      var filed=(d.filed||[]), dedup=(d.deduped||[]);
-      if(filed.length){
-        flash('✓ Found '+filed.length+' defect(s) nobody reported — fixing them now',true);
-        out.innerHTML='<div style="margin-top:8px;font-size:11px;line-height:1.7">'+
-          filed.map(function(f){return '• '+f.title.replace('Unreported defect: ','');}).join('<br>')+
-          '<div style="margin-top:6px;opacity:.7">Watch them in the console → each opens a pull request.</div></div>';
-      }else if(dedup.length){
-        flash('Already filed '+dedup.length+' defect(s) — reset the platform to run this again',false);
-        out.innerHTML='<div style="margin-top:8px;font-size:11px;opacity:.75">These defects are already open as tickets (deduped).</div>';
-      }else{
-        flash('No unreported defects found — the codebase is clean',true);
-        out.innerHTML='';
-      }
-    }catch(e){ flash('Sweep failed: '+e,false); out.innerHTML=''; }
-    this.disabled=false;
-  });
-  document.getElementById('dc-send').addEventListener('click',async function(){
-    var s={};try{s=await (await fetch('/state',{cache:'no-store'})).json();}catch(e){}
-    var armed=Object.keys(TICKETS).filter(function(k){return s[k]===true;});
-    if(!armed.length){flash('Arm a bug first (step 1)',false);return;}
-    var f=armed[0], t=TICKETS[f];
-    flash('Filing ticket to AgentForge…');
-    try{
-      var lr=await fetch(PLATFORM+'/login',{method:'POST',headers:{'content-type':'application/json'},
-        body:JSON.stringify({user:'developer',password:'developer'})});
-      var tok=(await lr.json()).token;
-      if(!tok){flash('Login to platform failed',false);return;}
-      var tr=await fetch(PLATFORM+'/tickets',{method:'POST',headers:{'content-type':'application/json','authorization':'Bearer '+tok},
-        body:JSON.stringify({source:'manual',type:t.type,repo:MIRROR,ref:'main',title:t.title,details:t.details})});
-      var tj=await tr.json();
-      if(!tj.id){flash('File failed: '+String(tj.detail||JSON.stringify(tj)).slice(0,70),false);return;}
-      var tid=String(tj.id);
-      setpr(''); flash('✓ Filed ticket '+tid.slice(0,8)+' — agents are working…');
-      // live status + GitHub PR link (auth header carries the same session token)
-      var AUTH={'authorization':'Bearer '+tok};
-      if(_poll)clearInterval(_poll); var tries=0;
-      _poll=setInterval(async function(){
-        tries++;
-        try{
-          var tk=await (await fetch(PLATFORM+'/tickets/'+tid,{headers:AUTH})).json();
-          var st=tk.status||'';
-          var runs=await (await fetch(PLATFORM+'/runs?item_id='+tid,{headers:AUTH})).json();
-          runs=Array.isArray(runs)?runs:(runs.runs||[]);
-          var pr=runs[0]&&runs[0].pr_url; if(pr)setpr(pr);
-          if(st==='pr_open'||st==='awaiting_approval'){flash('✓ Fix ready — open the console to approve →');clearInterval(_poll);}
-          else if(st==='resolved'){flash('✓ Resolved & healed');clearInterval(_poll);}
-          else if(st==='failed'||st==='needs_triage'){flash('Ended: '+st,false);clearInterval(_poll);}
-          else{flash('Agents working…'+(st?' ('+st+')':''));}
-        }catch(e){}
-        if(tries>72)clearInterval(_poll);
-      },5000);
-    }catch(e){flash('File failed (network/CORS): '+e,false);}
-  });
-  document.getElementById('dc-reset').addEventListener('click',async function(){
-    flash('Resetting…');
-    var d=await ccpost('/admin/reset',null);
-    flash(d.ok?'✓ Reset — every panel healthy again':'Reset failed',d.ok);
-  });
-  function setMin(on){
-    var p=document.getElementById('democtl'); p.classList.toggle('min',on);
-    document.getElementById('democtl-min').textContent = on ? '+' : '–';
-  }
-  document.getElementById('democtl-head').addEventListener('click',function(){
-    setMin(!document.getElementById('democtl').classList.contains('min'));});
-  // an explicit control: the panel was collapse-on-click-anywhere, which nobody discovers mid-demo
-  document.getElementById('democtl-min').addEventListener('click',function(ev){
-    ev.stopPropagation();
-    setMin(!document.getElementById('democtl').classList.contains('min'));});
-
-  // ── send ONE code defect ─────────────────────────────────────────────────────────────
-  // Symptom-only on purpose: the ticket never names the file or the function, so localization and root cause
-  // are genuinely the agents' work rather than something the demo handed them.
-  var CODE_BUGS={
-    billing:{title:'Invoice total is one cent short of the line items',
-      details:'Finance reconciliation is failing: an invoice with ten $0.10 lines totals $0.99 instead of $1.00, so the invoice does not match the sum of its own lines. It only shows up on invoices with many small lines.'},
-    idempotency:{title:'A customer was charged twice for a single purchase',
-      details:'A customer says one purchase appears twice on their statement. Our logs show the client timed out and retried the same request, and both attempts were applied to the ledger.'},
-    onhold:{title:'We are recording SLA breaches for tickets that were waiting on the customer',
-      details:'Tickets parked awaiting a reply from the customer are still burning their resolution target, so the desk is posting breaches for time it could not do anything about.'},
-    sla_clock:{title:'Tickets raised on a Friday afternoon breach over the weekend',
-      details:'Our support hours are 09:00-17:00 Monday to Friday, but a ticket opened late on Friday is already breached by Monday morning even though nobody was working. The countdown appears to run overnight and at weekends.'},
-    ui_format:{title:'The Pipeline value tile shows an unreadable raw number',
-      details:'On the overview the Pipeline value KPI renders as a long raw figure that overflows its tile and gets clipped, instead of the compact form the other tiles use. The underlying value is correct — it is only how it is displayed.'},
-    exports:{title:'Accented account names are cut off mid-character in the CSV export',
-      details:"When we export the accounts list, names like 'Jose Alvarez' with accents come out mangled and shorter than the ten characters the column allows. Plain ASCII names look fine."}
-  };
-  // What the USER sees when each defect bites. These are the ACTUAL outputs of the buggy code, not
-  // illustrations — computed by running the shipped functions (billing 99c, ledger 5000c, 660min, 3960min,
-  // 'José Álv'). If a fix lands, the "should be" column is what the code then returns.
-  var SYMPTOMS={
-    billing:{t:'Invoice #4821 · Finance',ctx:'10 lines × $0.10 each',
-      bad:'Total  $0.99',good:'Total  $1.00',badlbl:'shown',goodlbl:'should be'},
-    idempotency:{t:'Customer ledger · one purchase',ctx:'client timed out and retried the same request',
-      bad:'Charged  $50.00',good:'Charged  $25.00',badlbl:'billed',goodlbl:'should be'},
-    onhold:{t:'Ticket SLA · resolution clock',ctx:'30m worked · 600m awaiting the customer · 30m worked',
-      bad:'660 min counted',good:'60 min counted',badlbl:'counted',goodlbl:'should be'},
-    sla_clock:{t:'Ticket raised Fri 16:00 · support 09:00–17:00 Mon–Fri',ctx:'checked Monday 10:00',
-      bad:'3960 min elapsed → BREACHED',good:'120 min elapsed → on track',badlbl:'shown',goodlbl:'should be'},
-    exports:{t:'Accounts export · name column (10 chars)',ctx:'account name “José Álvarez”',
-      bad:'“José Álv”',good:'“José Álvar”',badlbl:'exported',goodlbl:'should be'},
-    ui_format:{t:'Overview · Pipeline value tile (front-end)',ctx:'the tile is ~90px wide',
-      bad:'$1840000  (clipped)',good:'$1.84M',badlbl:'rendered',goodlbl:'should be'}
-  };
-  function showSymptom(key){
-    var el=document.getElementById('dc-symptom'), s=SYMPTOMS[key];
-    if(!s){el.className='';el.innerHTML='';return;}
-    el.innerHTML='<div class="sy-t">👁 What the user sees — '+s.t+'</div>'+
-      '<div class="sy-ctx">'+s.ctx+'</div>'+
-      '<div class="sy-row"><span class="sy-tag">'+s.badlbl+'</span><span class="sy-bad">✗ '+s.bad+'</span></div>'+
-      '<div class="sy-row"><span class="sy-tag">'+s.goodlbl+'</span><span class="sy-good">✓ '+s.good+'</span></div>';
-    el.className='show';
-  }
-  Array.prototype.forEach.call(document.querySelectorAll('.dc-bug'),function(b){
-    // hovering previews the symptom; clicking ARMS it on the dashboard (it does NOT file a ticket — the
-    // point of the demo is that you SEE the wrong number first, then decide to raise it)
-    b.addEventListener('mouseenter',function(){ if(!b.disabled) showSymptom(b.getAttribute('data-bug')); });
-    b.addEventListener('click',function(){
-      var k=b.getAttribute('data-bug');
-      DEFECT=(DEFECT===k)?null:k;                      // click again to clear
-      Array.prototype.forEach.call(document.querySelectorAll('.dc-bug'),function(x){
-        x.classList.toggle('on',x.getAttribute('data-bug')===DEFECT);});
-      showSymptom(DEFECT);
-      try{tick();}catch(e){}                            // repaint immediately
-      var raise=document.getElementById('dc-raise');
-      if(DEFECT){
-        flash('👁 Symptom is now visible on the dashboard — raise it in the console');
-        setpr('');
-        var c=document.getElementById('dc-console');
-        raise.href=(c&&c.href&&c.href!=='#')?c.href:'https://agent-forge-three-gold.vercel.app';
-        raise.style.display='block';
-        raise.textContent='↗ Raise “'+(CODE_BUGS[DEFECT]?CODE_BUGS[DEFECT].title.slice(0,26):DEFECT)+'…” in the console';
-      } else { flash('Cleared'); raise.style.display='none'; }
-    });
-  });
-  // kept for reference: the old one-click "file it straight away" path
-  function _unusedFile(b){
-    (async function(){
-      var t=CODE_BUGS[b.getAttribute('data-bug')]; if(!t)return;
-      showSymptom(b.getAttribute('data-bug'));
-      Array.prototype.forEach.call(document.querySelectorAll('.dc-bug'),function(x){x.disabled=true;});
-      flash('Filing “'+t.title.slice(0,38)+'…” to AgentForge…'); setpr('');
-      try{
-        var lr=await fetch(PLATFORM+'/login',{method:'POST',headers:{'content-type':'application/json'},
-          body:JSON.stringify({user:'developer',password:'developer'})});
-        var tok=(await lr.json()).token, AUTH={'authorization':'Bearer '+tok};
-        var tr=await fetch(PLATFORM+'/tickets',{method:'POST',
-          headers:{'content-type':'application/json','authorization':'Bearer '+tok},
-          body:JSON.stringify({source:'manual',type:'bug',repo:'jeet-1236/agentforge-commandcenter',ref:'main',
-                               title:t.title,details:t.details})});
-        var tid=(await tr.json()).id;
-        flash('✓ Filed — agents are working on it');
-        if(_poll)clearInterval(_poll);
-        _poll=setInterval(async function(){
-          try{
-            var tk=await (await fetch(PLATFORM+'/tickets/'+tid,{headers:AUTH})).json();
-            var runs=await (await fetch(PLATFORM+'/runs?item_id='+tid,{headers:AUTH})).json();
-            var r=(runs&&runs.length)?runs[0]:(runs&&runs.runs&&runs.runs[0])||{};
-            var rc=(r.steps||[]).filter(function(x){return x.agent==='root_cause';})[0];
-            var f=rc&&rc.detail&&rc.detail.file?(' · '+String(rc.detail.file).split('/').pop()):'';
-            flash((tk.status||'working')+f);
-            if(r.pr_url)setpr(r.pr_url);
-            if(['pr_open','resolved','failed','needs_triage'].indexOf(tk.status)>=0){
-              clearInterval(_poll);_poll=null;
-              Array.prototype.forEach.call(document.querySelectorAll('.dc-bug'),function(x){x.disabled=false;});
-              var done = tk.status==='pr_open' ? ('✓ Fixed'+f+' — pull request opened')
-                        : tk.status==='failed' ? ('⚠ Handed to an engineer'+f)
-                        : tk.status;
-              flash(done, tk.status!=='failed');
-            }
-          }catch(e){}
-        },5000);
-      }catch(e){
-        flash('Failed: '+e,false);
-        Array.prototype.forEach.call(document.querySelectorAll('.dc-bug'),function(x){x.disabled=false;});
-      }
-    })();
-  }
-  async function poll(){try{var r=await fetch('/state',{cache:'no-store'});var s=await r.json();
-    var on=Object.keys(s).filter(function(k){return s[k]===true;});
-    document.getElementById('democtl-arm').textContent=on.length?(on.length+' armed'):'all clear';
-    document.querySelectorAll('#democtl .dc-arm').forEach(function(b){
-      b.classList.toggle('on',s[b.getAttribute('data-fault')]===true);});
-  }catch(e){document.getElementById('democtl-arm').textContent='';}}
-  setInterval(poll,2000);poll();
-})();
 </script>
 </body>
 </html>
