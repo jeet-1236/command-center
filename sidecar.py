@@ -13,17 +13,30 @@ Metric naming/schema is deliberate: `{services:{name:{ok,error_rate,p95_ms}}, me
 """
 from __future__ import annotations
 
+import glob
+import hashlib
 import json
 import os
+import sys
 import threading
 
 import requests
 from flask import Flask, Response, jsonify, request
 
+# `python sidecar/sidecar.py` puts this directory on sys.path, but a WSGI/PaaS entrypoint may not — be
+# explicit so the live checks import the same way under every runner.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import livechecks          # noqa: E402 — the LIVE app checks (they RUN commandcenter/*.py, not a fault flag)
+
 app = Flask(__name__)
 
-HERE = os.path.dirname(__file__)
-DASHBOARD = os.path.join(HERE, "dashboard", "index.html")
+HERE = os.path.dirname(os.path.abspath(__file__))
+# Two layouts run this file: the monorepo's `samples/commandcenter/sidecar/sidecar.py`, where the dashboard
+# is a sibling of this directory, and the deployed Command Center repository, where `sidecar.py` sits at the
+# root beside `dashboard/`. Pick whichever exists rather than keeping two copies of the file in step by hand.
+DASHBOARD = next((p for p in (os.path.join(HERE, "..", "dashboard", "index.html"),
+                              os.path.join(HERE, "dashboard", "index.html"))
+                  if os.path.isfile(p)), os.path.join(HERE, "..", "dashboard", "index.html"))
 OBS_FILE = os.getenv("COMMANDCENTER_OBS_FILE", "/tmp/commandcenter-obs.json")
 STATE_FILE = os.path.join(HERE, "state.json")
 PLATFORM_INGEST_URL = os.getenv("PLATFORM_INGEST_URL", "http://localhost:8000/ingest/grafana")
@@ -39,11 +52,8 @@ _DEFAULT_STATE = {
     # ── L3 CODE DEFECTS — real bugs in the commandcenter/*.py backend (not an armed runtime fault; the defect
     #    lives in the repo). Armed here so the dashboard SHOWS the wrong number the bug produces + an engineering
     #    incident; AgentForge's L3 lane reproduces → fixes → PR → (deploy) heals it. Toggle for the demo. ──
-    "code_pipeline":          False,   # cc-code-1 · pipeline.py: multi-currency deals double-counted → pipeline value overstated
-    "code_sla":               False,   # cc-code-2 · sla.py: at-risk misses the boundary ticket → a breach slips
-    "code_finops":            False,   # cc-code-3 · finops.py: projection off-by-one → false 'over budget' alert
-    "code_access":            False,   # cc-code-4 · access.py: leaver not flagged → an access-review miss
-    "code_accent":            False,   # cc-code-5 · theme.py: healthy status colour returns the danger red, not the brand green → a healthy system reads as critical
+    "code_pipeline":          False,   # pipeline.py: multi-currency deals double-counted → pipeline value overstated
+    "code_accent":            False,   # theme.py: the healthy status colour returns the danger red → a healthy system reads as critical
 }
 
 # UC6 · the one account whose outbound sync delivery is dead-lettered while everyone else's flows. Naming the
@@ -123,9 +133,6 @@ def build_snapshot(s: dict) -> dict:
     sync_failing = vendor_down or cred_exp     # the CRM sync connector is erroring (either owner)
     # L3 code defects — the wrong number each planted bug produces on the dashboard when armed.
     code_pipeline = bool(s.get("code_pipeline"))
-    code_sla = bool(s.get("code_sla"))
-    code_finops = bool(s.get("code_finops"))
-    code_access = bool(s.get("code_access"))
     return {
         "_comment": "Live Company Command Center telemetry — written by the sidecar from the armed fault flags.",
         "services": {
@@ -167,17 +174,11 @@ def build_snapshot(s: dict) -> dict:
             "cc_pipeline_usd":                2040000 if code_pipeline else 1840000,
             "cc_pipeline_usd_correct":        1840000,
             "cc_open_tickets":                12,
-            # cc-code-2 (sla.py boundary): a ticket exactly at the warning threshold is missed → under-counted,
-            # and one real breach slips the early-warning.
-            "cc_sla_at_risk_count":           1 if code_sla else 2,
-            "cc_sla_breach_missed":           1 if code_sla else 0,
+            "cc_sla_at_risk_count":           2,
             "cc_cloud_spend_usd":             48200,
             "cc_cloud_budget_usd":            60000,
-            # cc-code-3 (finops.py projection off-by-one): early-month projection over-shoots the budget → false alert.
-            "cc_cloud_projection_usd":        78000 if code_finops else 54000,
+            "cc_cloud_projection_usd":        54000,
             "cc_access_creds_expired":        1 if cred_exp else 0,
-            # cc-code-4 (access.py and/or): a departed employee who was recently active isn't flagged.
-            "cc_access_review_missed":        1 if code_access else 0,
         },
         "errors": _errors(s),
     }
@@ -220,12 +221,6 @@ def _errors(s: dict) -> list:
     # L3 code-defect symptoms — named to the source file so the investigation points at the module to fix.
     if s.get("code_pipeline"):
         out.append(_err("commandcenter/pipeline.py", "Revenue rollup overstates pipeline value — multi-currency deals counted once per currency (code defect cc-code-1)", 1))
-    if s.get("code_sla"):
-        out.append(_err("commandcenter/sla.py", "SLA 'at risk' missed a ticket exactly at the warning threshold — a breach slipped the early warning (code defect cc-code-2)", 1))
-    if s.get("code_finops"):
-        out.append(_err("commandcenter/finops.py", "Cloud-spend month-end projection over-shoots early in the month — false 'over budget' alert (code defect cc-code-3)", 1))
-    if s.get("code_access"):
-        out.append(_err("commandcenter/access.py", "Access review missed a departed employee who was recently active (code defect cc-code-4)", 1))
     return out
 
 
@@ -292,6 +287,44 @@ def account_one(account_id):
     return jsonify({"error": f"unknown account {account_id}"}), 404
 
 
+@app.get("/api/checks")
+def api_checks():
+    """The LIVE application checks behind the "Live app checks" tab — each one RUNS a real function in
+    `commandcenter/` and reports what came back. Unlike every other panel here, nothing about this endpoint
+    is derived from a fault flag: it is red because the served code is wrong and green because it is right,
+    which is what makes the post-approval heal something the audience can verify rather than take on
+    trust. See sidecar/livechecks.py."""
+    rows = livechecks.run_all()
+    # The dashboard paints its "healthy" green with whatever commandcenter/theme.py returns, so the visual
+    # defect is visible as the dashboard itself turning red rather than as a card that says it did. Same
+    # principle as every check here: the app's own code decides, not a flag.
+    try:
+        ok_color = livechecks._module("theme").status_ok_color()
+    except Exception:  # noqa: BLE001
+        ok_color = "#3fb950"
+    return jsonify({"checks": rows, "failing": sum(0 if r["ok"] else 1 for r in rows),
+                    "ok_color": ok_color})
+
+
+@app.post("/api/contacts")
+def api_contacts():
+    """The "New CRM contact" form posts here. Runs the app's real validation rule."""
+    body = request.get_json(silent=True) or {}
+    return jsonify(livechecks.try_contact(str(body.get("name", "")), str(body.get("phone", ""))))
+
+
+@app.post("/api/notes")
+def api_notes():
+    """The "Add note to ticket" form posts here. Returns whatever the handler answered — including the 500
+    it is currently answering with, which is the whole point of the incident."""
+    body = request.get_json(silent=True) or {}
+    payload = {"ticket_id": body.get("ticket_id")}
+    if "notes" in body:
+        payload["notes"] = body["notes"]          # may be an explicit JSON null — that IS the reported case
+    res = livechecks.try_note(payload)
+    return jsonify(res), res["status"]
+
+
 @app.get("/metrics")
 def metrics():
     snap = build_snapshot(state)
@@ -334,6 +367,78 @@ def admin_action():
                                                    f"(no other records touched)."})
         return jsonify({"ok": True, "message": f"{action}: {fault} cleared; the surface heals."})
     return jsonify({"ok": True, "message": f"{action} ran (dry-run, {fault} unchanged)."})
+
+
+@app.post("/admin/deploy")
+def admin_deploy():
+    """Deploy an approved fix INTO the served app: apply a unified diff to `commandcenter/`.
+
+    Co-located, the platform writes the patch straight onto this tree. Deployed, the Command Center is its
+    own service on its own disk, so the platform cannot — and without this the live checks would stay red
+    after an approval, or would have to be "healed" by restoring our own copy of the answer, which is not
+    the same claim at all. This applies the RUN'S OWN DIFF, so the deployed heal means what the local one
+    means: the code the reviewer approved is now the code running here.
+
+    Forward-only (`git apply` never reverse-applies, and the `patch` fallback is `--forward`), so
+    re-approving cannot re-break the surface, and confined to `commandcenter/` so a diff for anything else
+    is refused rather than written."""
+    import subprocess
+    body = request.get_json(silent=True) or {}
+    patch = body.get("patch") or ""
+    if not patch.strip():
+        return jsonify({"ok": False, "error": "no patch"}), 400
+    # A unified diff is newline-terminated data, not a string to tidy. Stripping it removes the final
+    # newline and `git apply` answers "corrupt patch"/"unexpectedly ends in middle of line" — which reads
+    # as a bad diff from the fix agent rather than as us having damaged it in transit.
+    if not patch.endswith("\n"):
+        patch += "\n"
+    targets = {ln.split(" b/")[-1].strip() for ln in patch.splitlines() if ln.startswith("diff --git ")}
+    stray = sorted(t for t in targets if not t.startswith("commandcenter/"))
+    if stray:
+        return jsonify({"ok": False, "error": f"refusing a patch that touches {stray}"}), 400
+    root = livechecks.APP_ROOT
+
+    def _digests():
+        out = {}
+        for t in targets:
+            try:
+                with open(os.path.join(root, t), "rb") as fh:
+                    out[t] = hashlib.sha256(fh.read()).hexdigest()
+            except OSError:
+                out[t] = ""
+        return out
+
+    before = _digests()
+    try:
+        # `patch` FIRST, because its paths are relative to -d and nothing else. `git apply` resolves a
+        # patch against the REPOSITORY root, not against -C, so when the app is a subdirectory of a larger
+        # checkout — which it is in the monorepo — the diff lands somewhere else entirely and git still
+        # exits 0. Forward-only in both, so re-approving cannot reverse a deployed fix.
+        r = subprocess.run(["patch", "-p1", "--forward", "--batch", "-d", root],
+                           input=patch.encode(), capture_output=True, timeout=15)
+        why = (r.stdout + r.stderr).decode("utf-8", "replace").strip()
+        if r.returncode != 0:
+            g = subprocess.run(["git", "-C", root, "apply", "--recount", "--whitespace=nowarn"],
+                               input=patch.encode(), capture_output=True, timeout=15)
+            why = (why + " | " + g.stderr.decode("utf-8", "replace").strip())[:300]
+    except Exception as e:  # noqa: BLE001 — a deploy must never take the dashboard down
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+    # `applied` is decided by whether the FILES CHANGED, not by an exit code. A patch tool that reports
+    # success having written nothing here (or having written somewhere else) would otherwise be reported as
+    # a deploy, and the dashboard would sit red underneath a message saying it had healed.
+    applied = _digests() != before
+    for f in glob.glob(os.path.join(root, "commandcenter", "*.rej")) + \
+            glob.glob(os.path.join(root, "commandcenter", "*.orig")):
+        try:
+            os.remove(f)                 # a rejected hunk leaves litter in the served tree; don't keep it
+        except OSError:
+            pass
+    # Re-run the checks now so the answer says what the app does, not just that a file was written.
+    rows = livechecks.run_all()
+    return jsonify({"ok": True, "applied": applied, "files": sorted(targets),
+                    "failing": sum(0 if x["ok"] else 1 for x in rows),
+                    "message": ("deployed — the served app now runs the approved fix" if applied
+                                else f"patch did not apply (already deployed?) — {why}")})
 
 
 @app.post("/admin/reset")
