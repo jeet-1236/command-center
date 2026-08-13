@@ -689,16 +689,6 @@ function live_sk(){
         <button class="btn ghost" onclick="lvFill('initial')">Name with an initial</button>
       </div>
       <div class="resp idle" id="lv-contact-out">Not submitted yet.</div></div>
-    <div class="card"><div class="hd"><h3>Record a payment</h3><span class="muted">POST /api/payments</span></div>
-      <p class="muted" style="margin:0 0 10px;font-size:12px">You are Priya in Finance, entering yesterday's cleared payments. Type <span class="mono">1200</span> and save; then try <span class="mono">1,200.00</span> — the same payment.</p>
-      <div class="form">
-        <input class="inp" id="lv-ticket" value="INV-2291" placeholder="Invoice reference" autocomplete="off">
-        <input class="inp" id="lv-note" value="1200" placeholder="Amount" autocomplete="off">
-      </div>
-      <div class="form"><button class="btn" onclick="lvNote()">Record payment</button>
-        <button class="btn ghost" onclick="$('lv-note').value='1200'">Round number</button>
-        <button class="btn ghost" onclick="$('lv-note').value='1,200.00'">With a comma</button></div>
-      <div class="resp idle" id="lv-note-out">Not submitted yet.</div></div>
 
     <div class="card"><div class="hd"><h3>Check an order total</h3><span class="muted">POST /api/order-total</span></div>
       <p class="muted" style="margin:0 0 10px;font-size:12px">You are in Accounts, reconciling yesterday's settlement. Work out what this order collects, and compare it with the invoice the customer was sent.</p>
@@ -710,23 +700,28 @@ function live_sk(){
       <div class="form"><button class="btn" onclick="lvOrder()">Work out the total</button></div>
       <div class="resp idle" id="lv-order-out">Not calculated yet.</div></div>
 
-    <div class="card"><div class="hd"><h3>Is this ticket late?</h3><span class="muted">POST /api/sla-check</span></div>
-      <p class="muted" style="margin:0 0 10px;font-size:12px">You run the support desk, 09:00-17:00 Mon-Fri, with a 4-working-hour promise. A customer wrote in Friday afternoon and you answered first thing Monday.</p>
-      <div class="form">
-        <input class="inp" id="lv-raised" value="2026-08-14T16:30" placeholder="Raised" autocomplete="off">
-        <input class="inp" id="lv-answered" value="2026-08-17T09:30" placeholder="Answered" autocomplete="off">
-      </div>
-      <div class="form"><button class="btn" onclick="lvSla()">Check against the SLA</button></div>
-      <div class="resp idle" id="lv-sla-out">Not checked yet.</div></div>
-
-    <div class="card"><div class="hd"><h3>Send the auditor the export</h3><span class="muted">POST /api/audit-export</span></div>
-      <p class="muted" style="margin:0 0 10px;font-size:12px">You are preparing the quarterly audit file. Ten audit records were written in the same second — one ordinary batch. Export them and count what comes out.</p>
-      <div class="form">
-        <input class="inp" id="lv-page" value="3" placeholder="Rows per page" autocomplete="off">
-      </div>
-      <div class="form"><button class="btn" onclick="lvExport()">Run the export</button></div>
-      <div class="resp idle" id="lv-export-out">Not exported yet.</div></div>
+    <div class="card"><div class="hd"><h3>What colour is "healthy"?</h3><span class="muted">commandcenter/theme.py</span></div>
+      <p class="muted" style="margin:0 0 10px;font-size:12px">Every green signal on this dashboard — the Operational pill, the service dots, the KPI stripes — is painted with whatever <span class="mono">status_ok_color()</span> returns. Ask the app what it is using right now.</p>
+      <div class="form"><button class="btn" onclick="lvTheme()">Read the healthy colour</button></div>
+      <div class="resp idle" id="lv-theme-out">Not read yet.</div></div>
   </div>`;
+}
+
+/* The third demo incident has no form to fill in: its symptom IS the colour of this page. So the panel
+   asks the app what it is painting "healthy" with and shows the swatch beside the brand green, which is
+   the same comparison the eye is already making across the rest of the dashboard. */
+async function lvTheme(){
+  const out=$('lv-theme-out'); out.className='resp idle'; out.textContent='Reading…';
+  try{
+    const r=await fetch('/api/checks',{cache:'no-store'}); const d=await r.json();
+    const got=d.ok_color||''; const want='#3fb950'; const ok=got.toLowerCase()===want;
+    out.className='resp '+(ok?'ok':'bad');
+    const sw=c=>`<span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${c};vertical-align:-1px;margin-right:5px"></span>`;
+    out.innerHTML = ok
+      ? `${sw(got)}healthy renders <span class="mono">${got}</span> — the brand green. The board is telling the truth.`
+      : `${sw(got)}healthy renders <span class="mono">${got}</span>, but the brand green is ${sw(want)}<span class="mono">${want}</span>.`
+        +`<br>Every "healthy" signal on this page is being painted with the danger colour.`;
+  }catch(e){ out.className='resp bad'; out.textContent='Could not reach the app.'; }
 }
 /* ONE AT A TIME. The demo runs an incident at a time — plant it, show it failing, file the ticket, watch
    it resolve, show it green — and that story only holds if there is nothing else red on screen. So this
@@ -797,23 +792,6 @@ async function lvContact(){
     out.textContent=(d.saved?'✓ ':'✕ ')+d.message+(d.errors&&d.errors.length?'  [fields: '+d.errors.join(', ')+']':'');
   }catch(e){out.className='resp bad';out.textContent='request failed: '+e;}
 }
-async function lvNote(){
-  const out=$('lv-note-out');out.className='resp idle';out.textContent='Recording…';
-  const typed=$('lv-note').value.trim();
-  /* A round amount typed into a number field arrives as a JSON NUMBER, and that is the reported case —
-     so send it as one when it looks like a bare number, and as the typed string otherwise. Sending
-     everything as a string would quietly avoid the very bug the card is about. */
-  const amount = /^\d+(\.\d+)?$/.test(typed) ? Number(typed) : typed;
-  const body={invoice_id:$('lv-ticket').value, amount:amount};
-  try{
-    const r=await fetch('/api/payments',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
-    const d=await r.json();
-    const ok=r.status<400;
-    out.className='resp '+(ok?'ok':'bad');
-    out.textContent=(ok?'✓ ':'✕ ')+'HTTP '+r.status+' — '+(d.crashed?('the endpoint crashed: '+d.exception)
-      :(ok?((d.body||{}).recorded||'recorded'):((d.body||{}).error||JSON.stringify(d.body))));
-  }catch(e){out.className='resp bad';out.textContent='request failed: '+e;}
-}
 async function lvOrder(){
   const out=$('lv-order-out');out.className='resp idle';out.textContent='Working it out…';
   try{
@@ -824,33 +802,6 @@ async function lvOrder(){
     out.className='resp '+(d.matches?'ok':'bad');
     out.textContent=(d.matches?'✓ ':'✕ ')+'We collect '+d.collected+' · the invoice says '+d.invoiced
       +(d.matches?' — they agree':' — short by ₹'+(d.short_cents/100).toFixed(2)+' on this order');
-  }catch(e){out.className='resp bad';out.textContent='request failed: '+e;}
-}
-async function lvSla(){
-  const out=$('lv-sla-out');out.className='resp idle';out.textContent='Checking…';
-  const z=v=>v.length===16?v+':00Z':v;   // the datetime input gives yyyy-mm-ddThh:mm
-  try{
-    const r=await fetch('/api/sla-check',{method:'POST',headers:{'content-type':'application/json'},
-      body:JSON.stringify({raised:z($('lv-raised').value),answered:z($('lv-answered').value),sla_minutes:240})});
-    const d=await r.json();
-    if(!d.ok){out.className='resp bad';out.textContent='✕ '+d.error;return;}
-    out.className='resp '+(d.breached?'bad':'ok');
-    out.textContent=(d.breached?'✕ BREACHED — ':'✓ Within target — ')+d.elapsed
-      +' of working time against a 4h promise';
-  }catch(e){out.className='resp bad';out.textContent='request failed: '+e;}
-}
-async function lvExport(){
-  const out=$('lv-export-out');out.className='resp idle';out.textContent='Exporting…';
-  try{
-    const r=await fetch('/api/audit-export',{method:'POST',headers:{'content-type':'application/json'},
-      body:JSON.stringify({page_size:Number($('lv-page').value)||3})});
-    const d=await r.json();
-    if(!d.ok){out.className='resp bad';out.textContent='✕ '+d.error;return;}
-    out.className='resp '+(d.matches?'ok':'bad');
-    let msg=d.exported+' of '+d.in_table+' records exported';
-    if(d.missing.length) msg+=' · missing '+d.missing.length+' ('+d.missing.slice(0,3).join(', ')+(d.missing.length>3?'…':'')+')';
-    if(d.duplicated.length) msg+=' · '+d.duplicated.length+' duplicated';
-    out.textContent=(d.matches?'✓ ':'✕ ')+msg+(d.matches?' — the file matches the table':' — the file does not match the table');
   }catch(e){out.className='resp bad';out.textContent='request failed: '+e;}
 }
 async function pollChecks(){
