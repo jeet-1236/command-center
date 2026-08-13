@@ -679,13 +679,42 @@ function live_sk(){
       </div>
       <div class="resp idle" id="lv-contact-out">Not submitted yet.</div></div>
     <div class="card"><div class="hd"><h3>Record a payment</h3><span class="muted">POST /api/payments</span></div>
-      <p class="muted" style="margin:0 0 10px;font-size:12px">An empty note box sends <span class="mono">"notes": null</span> — the case the integration is hitting (commandcenter/intake.py).</p>
+      <p class="muted" style="margin:0 0 10px;font-size:12px">You are Priya in Finance, entering yesterday's cleared payments. Type <span class="mono">1200</span> and save; then try <span class="mono">1,200.00</span> — the same payment.</p>
       <div class="form">
         <input class="inp" id="lv-ticket" value="INV-2291" placeholder="Invoice reference" autocomplete="off">
         <input class="inp" id="lv-note" value="1200" placeholder="Amount" autocomplete="off">
       </div>
-      <div class="form"><button class="btn" onclick="lvNote()">Record payment</button></div>
+      <div class="form"><button class="btn" onclick="lvNote()">Record payment</button>
+        <button class="btn ghost" onclick="$('lv-note').value='1200'">Round number</button>
+        <button class="btn ghost" onclick="$('lv-note').value='1,200.00'">With a comma</button></div>
       <div class="resp idle" id="lv-note-out">Not submitted yet.</div></div>
+
+    <div class="card"><div class="hd"><h3>Check an order total</h3><span class="muted">POST /api/order-total</span></div>
+      <p class="muted" style="margin:0 0 10px;font-size:12px">You are in Accounts, reconciling yesterday's settlement. Work out what this order collects, and compare it with the invoice the customer was sent.</p>
+      <div class="form">
+        <input class="inp" id="lv-sub" value="10000" placeholder="Order value ₹" autocomplete="off">
+        <input class="inp" id="lv-disc" value="10" placeholder="Discount %" autocomplete="off">
+        <input class="inp" id="lv-tax" value="20" placeholder="GST %" autocomplete="off">
+      </div>
+      <div class="form"><button class="btn" onclick="lvOrder()">Work out the total</button></div>
+      <div class="resp idle" id="lv-order-out">Not calculated yet.</div></div>
+
+    <div class="card"><div class="hd"><h3>Is this ticket late?</h3><span class="muted">POST /api/sla-check</span></div>
+      <p class="muted" style="margin:0 0 10px;font-size:12px">You run the support desk, 09:00-17:00 Mon-Fri, with a 4-working-hour promise. A customer wrote in Friday afternoon and you answered first thing Monday.</p>
+      <div class="form">
+        <input class="inp" id="lv-raised" value="2026-08-14T16:30" placeholder="Raised" autocomplete="off">
+        <input class="inp" id="lv-answered" value="2026-08-17T09:30" placeholder="Answered" autocomplete="off">
+      </div>
+      <div class="form"><button class="btn" onclick="lvSla()">Check against the SLA</button></div>
+      <div class="resp idle" id="lv-sla-out">Not checked yet.</div></div>
+
+    <div class="card"><div class="hd"><h3>Send the auditor the export</h3><span class="muted">POST /api/audit-export</span></div>
+      <p class="muted" style="margin:0 0 10px;font-size:12px">You are preparing the quarterly audit file. Ten audit records were written in the same second — one ordinary batch. Export them and count what comes out.</p>
+      <div class="form">
+        <input class="inp" id="lv-page" value="3" placeholder="Rows per page" autocomplete="off">
+      </div>
+      <div class="form"><button class="btn" onclick="lvExport()">Run the export</button></div>
+      <div class="resp idle" id="lv-export-out">Not exported yet.</div></div>
   </div>`;
 }
 /* ONE AT A TIME. The demo runs an incident at a time — plant it, show it failing, file the ticket, watch
@@ -772,6 +801,45 @@ async function lvNote(){
     out.className='resp '+(ok?'ok':'bad');
     out.textContent=(ok?'✓ ':'✕ ')+'HTTP '+r.status+' — '+(d.crashed?('the endpoint crashed: '+d.exception)
       :(ok?((d.body||{}).recorded||'recorded'):((d.body||{}).error||JSON.stringify(d.body))));
+  }catch(e){out.className='resp bad';out.textContent='request failed: '+e;}
+}
+async function lvOrder(){
+  const out=$('lv-order-out');out.className='resp idle';out.textContent='Working it out…';
+  try{
+    const r=await fetch('/api/order-total',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({subtotal:Number($('lv-sub').value),discount_pct:Number($('lv-disc').value),tax_pct:Number($('lv-tax').value)})});
+    const d=await r.json();
+    if(!d.ok){out.className='resp bad';out.textContent='✕ '+d.error;return;}
+    out.className='resp '+(d.matches?'ok':'bad');
+    out.textContent=(d.matches?'✓ ':'✕ ')+'We collect '+d.collected+' · the invoice says '+d.invoiced
+      +(d.matches?' — they agree':' — short by ₹'+(d.short_cents/100).toFixed(2)+' on this order');
+  }catch(e){out.className='resp bad';out.textContent='request failed: '+e;}
+}
+async function lvSla(){
+  const out=$('lv-sla-out');out.className='resp idle';out.textContent='Checking…';
+  const z=v=>v.length===16?v+':00Z':v;   // the datetime input gives yyyy-mm-ddThh:mm
+  try{
+    const r=await fetch('/api/sla-check',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({raised:z($('lv-raised').value),answered:z($('lv-answered').value),sla_minutes:240})});
+    const d=await r.json();
+    if(!d.ok){out.className='resp bad';out.textContent='✕ '+d.error;return;}
+    out.className='resp '+(d.breached?'bad':'ok');
+    out.textContent=(d.breached?'✕ BREACHED — ':'✓ Within target — ')+d.elapsed
+      +' of working time against a 4h promise';
+  }catch(e){out.className='resp bad';out.textContent='request failed: '+e;}
+}
+async function lvExport(){
+  const out=$('lv-export-out');out.className='resp idle';out.textContent='Exporting…';
+  try{
+    const r=await fetch('/api/audit-export',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({page_size:Number($('lv-page').value)||3})});
+    const d=await r.json();
+    if(!d.ok){out.className='resp bad';out.textContent='✕ '+d.error;return;}
+    out.className='resp '+(d.matches?'ok':'bad');
+    let msg=d.exported+' of '+d.in_table+' records exported';
+    if(d.missing.length) msg+=' · missing '+d.missing.length+' ('+d.missing.slice(0,3).join(', ')+(d.missing.length>3?'…':'')+')';
+    if(d.duplicated.length) msg+=' · '+d.duplicated.length+' duplicated';
+    out.textContent=(d.matches?'✓ ':'✕ ')+msg+(d.matches?' — the file matches the table':' — the file does not match the table');
   }catch(e){out.className='resp bad';out.textContent='request failed: '+e;}
 }
 async function pollChecks(){
