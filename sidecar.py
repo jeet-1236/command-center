@@ -287,6 +287,25 @@ def account_one(account_id):
     return jsonify({"error": f"unknown account {account_id}"}), 404
 
 
+@app.get("/webui/")
+@app.get("/webui/<path:asset>")
+def webui(asset: str = "index.html"):
+    """The Support surface's own web UI — the page the two FRONT-END incidents live in.
+
+    Served from here so the defect can be looked at (and resized) in a browser during the demo, and so the
+    dashboard can reach it same-origin. Confined to the webui directory: the path is resolved and checked to
+    be inside it, so a traversal cannot read the rest of the checkout."""
+    root = os.path.realpath(os.path.join(livechecks.APP_ROOT, "webui"))
+    full = os.path.realpath(os.path.join(root, asset))
+    if not (full == root or full.startswith(root + os.sep)) or not os.path.isfile(full):
+        return Response("not found", status=404, mimetype="text/plain")
+    kind = ("text/html" if full.endswith(".html") else
+            "text/css" if full.endswith(".css") else
+            "application/javascript" if full.endswith(".js") else "text/plain")
+    with open(full, encoding="utf-8") as fh:
+        return Response(fh.read(), mimetype=kind)
+
+
 @app.get("/api/checks")
 def api_checks():
     """The LIVE application checks behind the "Live app checks" tab — each one RUNS a real function in
@@ -323,6 +342,56 @@ def api_notes():
         payload["notes"] = body["notes"]          # may be an explicit JSON null — that IS the reported case
     res = livechecks.try_note(payload)
     return jsonify(res), res["status"]
+
+
+# ── driving the L2 code demo from the dashboard ──────────────────────────────────────────────────────────
+# "Plant the bug, then watch it get fixed", as four clicks on the page the audience is already looking at,
+# instead of a terminal beside it. Every one of these does the SAME thing the CLI driver does — plant edits
+# the served module, file raises a real ticket on the platform, approve answers a real gate. Nothing here is
+# a rehearsal of the demo; it IS the demo, with the buttons where people can see them.
+#
+# They live on the sidecar rather than being called from the page directly because the dashboard is served
+# from here: same origin, no CORS, and it keeps working when the platform is on another host.
+
+@app.get("/api/incidents")
+def api_incidents():
+    """Every plantable incident, with whether it is currently planted and where its ticket has got to."""
+    return jsonify({"incidents": livechecks.incident_list()})
+
+
+@app.post("/api/incident/<slug>/plant")
+def api_incident_plant(slug):
+    """Put the defect into the served app. The matching live check goes red on the next poll.
+
+    ONE AT A TIME: every other planted incident is cleared first, so the board shows exactly one red card
+    and it is this one. POST {"exclusive": false} to plant alongside what is already there.
+    """
+    body = request.get_json(silent=True) or {}
+    res = livechecks.plant_incident(slug, exclusive=body.get("exclusive", True) is not False)
+    return jsonify(res), (200 if res.get("ok") else 400)
+
+
+@app.post("/api/incident/<slug>/clear")
+def api_incident_clear(slug):
+    """Take the defect back out, from the canonical snapshot — the reset between rehearsals."""
+    res = livechecks.clear_incident(slug)
+    return jsonify(res), (200 if res.get("ok") else 400)
+
+
+@app.post("/api/incident/<slug>/file")
+def api_incident_file(slug):
+    """Raise the incident's ticket on the platform, in the reporter's words. AgentForge picks it up from
+    there — the page then just watches the ticket's stage."""
+    res = livechecks.file_incident(slug)
+    return jsonify(res), (200 if res.get("ok") else 400)
+
+
+@app.post("/api/incident/<slug>/approve")
+def api_incident_approve(slug):
+    """Answer the open approval gate. The gate refuses a bare approval, so a written justification goes with
+    it — after which the reviewed patch deploys and the red card turns green on its own."""
+    res = livechecks.approve_incident(slug)
+    return jsonify(res), (200 if res.get("ok") else 400)
 
 
 @app.get("/metrics")
@@ -465,9 +534,10 @@ def ingest_bridge():
 
 if __name__ == "__main__":
     write_obs_snapshot(state)          # seed the obs file on boot so the agents read a clean slate immediately
-    # PORT is injected by Railway / most PaaS; fall back to the local demo's COMMANDCENTER_SIDECAR_PORT, then 8092.
+    # PORT is injected by Railway / most PaaS. Its presence is also the signal that we are BEHIND a router
+    # that reaches the container on its external interface, so bind 0.0.0.0 there and stay on loopback
+    # locally — which keeps the safer default a dev machine wants without breaking the deployed service.
+    # COMMANDCENTER_SIDECAR_HOST overrides either way (both sides of this merge wanted that knob).
     port = int(os.getenv("PORT") or os.getenv("COMMANDCENTER_SIDECAR_PORT") or "8092")
-    # Bind 0.0.0.0 so a PaaS router (Railway) or a tunnel can reach it; a co-located local run still works via
-    # localhost. Set COMMANDCENTER_SIDECAR_HOST=127.0.0.1 to restrict to loopback.
-    host = os.getenv("COMMANDCENTER_SIDECAR_HOST", "0.0.0.0")
+    host = os.getenv("COMMANDCENTER_SIDECAR_HOST") or ("0.0.0.0" if os.getenv("PORT") else "127.0.0.1")
     app.run(host=host, port=port, threaded=True)
