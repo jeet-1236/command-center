@@ -83,8 +83,8 @@ def _module(name: str):
 
 def _check_contacts():
     validate = _module("contacts").validate_contact
-    control = validate({"name": "Dana White", "phone": "555-018-2231"})
-    real = validate({"name": "Siobhán O'Brien", "phone": "+44 20 7946 0958"})
+    control = validate({"name": "Ananya Krishnamurthy", "phone": "98765 43210"})
+    real = validate({"name": "Meera D'Souza", "phone": "+91 80 2345 6789"})
     if control:
         return f"rejected fields {control} (even the US control case)", False, ""
     if real:
@@ -146,15 +146,70 @@ def _check_pipeline():
     return f"${total / 1e6:.2f}M pipeline value", total == 1840000, ""
 
 
-INCIDENT_KEYS = ("contacts", "intake", "orders", "reports", "theme", "pipeline")
+def _check_refunds():
+    split = _module("refunds").split_refund
+    got = split(10000, [1000, 1000, 1000])
+    return f"£{sum(got) / 100:,.2f} allocated across 3 lines ({got})", sum(got) == 10000, ""
+
+
+def _check_escalation():
+    mins = _module("escalation").business_minutes_between
+    # Friday 16:30 to Monday 09:30 — 65 wall-clock hours, one business hour.
+    got = mins("2026-08-14T16:30:00Z", "2026-08-17T09:30:00Z")
+    return f"{got} business minutes since Friday 16:30", got == 60, ""
+
+
+def _check_pagination():
+    pg = _module("pagination")
+    rows = [{"id": f"a{i:02d}", "created_at": "2026-08-12T10:00:00Z"} for i in range(10)]
+    out = pg.export_all(rows, limit=3)
+    ids = [r["id"] for r in out]
+    dupes = len(ids) - len(set(ids))
+    return (f"{len(ids)} of 10 rows exported, {dupes} duplicated",
+            pg.export_is_complete(rows, out), "")
+
+
+INCIDENT_KEYS = ("contacts", "intake", "orders", "reports", "refunds", "escalation", "pagination",
+                 "theme", "pipeline")
+# Every incident that can be FILED from the dashboard. Wider than INCIDENT_KEYS: the two front-end incidents
+# have no polled card (a browser gate is far too slow for a 2-second tick) but they are still demoed, so
+# their tickets still have to be found.
+TICKET_KEYS = INCIDENT_KEYS + ("uistate", "uilayout")
 
 CHECKS = [
+    {
+        "key": "refunds", "module": "commandcenter/refunds.py",
+        "surface": "Revenue · Refunds", "category": "Incorrect calculation logic",
+        "title": "Splitting a refund across three order lines",
+        "what": "A £100.00 refund on three equal lines — the parts must add up to the whole.",
+        "input": "£100.00 refunded across lines of £10.00, £10.00, £10.00",
+        "expected": "£100.00 allocated across 3 lines ([3334, 3333, 3333])",
+        "run": _check_refunds,
+    },
+    {
+        "key": "escalation", "module": "commandcenter/escalation.py",
+        "surface": "Support · Escalation queue", "category": "Timezone / working-calendar logic",
+        "title": "How long a Friday-afternoon ticket has been open",
+        "what": "The desk works 09:00-17:00 Mon-Fri, so the weekend is not time we kept anyone waiting.",
+        "input": "raised Fri 16:30 · now Mon 09:30",
+        "expected": "60 business minutes since Friday 16:30",
+        "run": _check_escalation,
+    },
+    {
+        "key": "pagination", "module": "commandcenter/pagination.py",
+        "surface": "Compliance · Audit export", "category": "Data-integrity / boundary logic",
+        "title": "Paging an audit batch written in the same second",
+        "what": "Ten rows sharing one timestamp, fetched three at a time — each must appear exactly once.",
+        "input": "10 rows, all created_at 10:00:00, page size 3",
+        "expected": "10 of 10 rows exported, 0 duplicated",
+        "run": _check_pagination,
+    },
     {
         "key": "contacts", "module": "commandcenter/contacts.py",
         "surface": "Revenue · New CRM contact", "category": "Broken validation logic",
         "title": "Saving an international contact",
         "what": "The form validates the contact before it reaches the CRM.",
-        "input": "Siobhán O'Brien · +44 20 7946 0958",
+        "input": "Meera D'Souza · +91 80 2345 6789",
         "expected": "accepted — contact saved",
         "run": _check_contacts,
     },
@@ -278,7 +333,7 @@ def _refresh_tickets() -> dict:
         if not repo.startswith(REPO_PREFIX):
             continue
         slug = repo[len(REPO_PREFIX):]
-        if slug in found or slug not in INCIDENT_KEYS:
+        if slug in found or slug not in TICKET_KEYS:
             continue
         status = t.get("status", "")
         stage, label = _STAGE.get(status, ("working", f"In progress ({status})"))
@@ -288,6 +343,18 @@ def _refresh_tickets() -> dict:
         _TICKETS.clear()
         _TICKETS.update(found)
     return _TICKETS
+
+
+def _invalidate() -> None:
+    """Drop the ticket cache so the very next poll refetches.
+
+    Clearing `_TICKETS` alone would not do it: `_refresh_tickets` returns early on the TTL timestamp, so the
+    dashboard would show "Not reported yet" for up to three seconds after the click that filed the report —
+    which reads, on stage, as the button having failed."""
+    global _TICKETS_AT
+    with _LOCK:
+        _TICKETS.clear()
+        _TICKETS_AT = 0.0
 
 
 def run_all() -> list:
@@ -314,6 +381,156 @@ def run_all() -> list:
             row["ticket"] = {"stage": "unreported", "stage_label": "Not reported yet", "id": "", "pr_url": ""}
         out.append(row)
     return out
+
+
+# ── driving the demo from the dashboard ──────────────────────────────────────────────────────────────────
+# The dashboard is served from here, so a call to here is same-origin; a call from the page straight to the
+# platform is not, and would need the platform to allow this origin. Routing through the sidecar keeps the
+# demo working on any host without touching CORS.
+INCIDENT_TICKETS: dict = {}      # slug -> {title, details, repo}, loaded from scripts/cc_incidents.py
+_REG = {"mod": None}             # the loaded scripts/cc_incidents module, or None in a deployed copy
+
+
+def _load_tickets() -> dict:
+    """The reporter's words for each incident, read from the ONE registry that also drives the CLI, so a
+    ticket raised from the dashboard is the same ticket `scripts/demo_l2_incident.py` raises."""
+    if INCIDENT_TICKETS:
+        return INCIDENT_TICKETS
+    try:
+        import importlib.util
+        reg = os.path.join(os.path.dirname(APP_ROOT), "..", "scripts", "cc_incidents.py")
+        reg = os.path.realpath(reg)
+        spec = importlib.util.spec_from_file_location("cc_incidents", reg)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _REG["mod"] = mod
+        for slug in mod.ALL:
+            inc = mod.INCIDENTS[slug]
+            INCIDENT_TICKETS[slug] = {"title": inc["ticket"]["title"],
+                                      "details": inc["ticket"]["details"],
+                                      "repo": mod.mirror_repo(slug),
+                                      "category": inc["category"], "surface": inc["surface"]}
+    except Exception:  # noqa: BLE001 — no registry (deployed copy) → the buttons just report it
+        pass
+    return INCIDENT_TICKETS
+
+
+def _registry():
+    """The incident registry module itself, for the operations that edit source (arm / heal / reset)."""
+    _load_tickets()
+    return _REG["mod"]
+
+
+def incident_list() -> list:
+    """Every incident the dashboard can plant and clear, with what is true of it right now."""
+    reg = _registry()
+    if reg is None:
+        return []
+    tickets = _refresh_tickets() or {}
+    out = []
+    for slug in reg.ALL:
+        inc = reg.INCIDENTS[slug]
+        try:
+            armed = reg.is_armed(slug)
+        except Exception:  # noqa: BLE001
+            armed = None
+        out.append({"slug": slug, "title": inc["ticket"]["title"], "category": inc["category"],
+                    "surface": inc["surface"], "module": inc["module"], "armed": armed,
+                    "browser": bool(inc.get("browser")), "polled": slug in INCIDENT_KEYS,
+                    "ticket": tickets.get(slug) or {}})
+    return out
+
+
+def plant_incident(slug: str, exclusive: bool = True) -> dict:
+    """Put the defect into the SERVED app, so the failure the ticket describes is on screen before the
+    ticket exists. This edits real source — the same edit `scripts/demo_l2_incident.py --arm` makes — which
+    is why the card that goes red afterwards means something.
+
+    EXCLUSIVE BY DEFAULT: every other planted incident is cleared first, so the app carries exactly one
+    defect and the board shows exactly one red card. A demo runs an incident at a time — plant it, show it
+    failing, file the ticket, watch it resolve, show it green — and that story only holds if there is
+    nothing else red on screen to argue about. After a few runs the app would otherwise be carrying three
+    or four defects at once and the room cannot tell which red card belongs to the ticket being discussed.
+
+    Pass exclusive=False to plant alongside whatever is already there (the old behaviour), which is what
+    the arm-everything scripts want.
+    """
+    reg = _registry()
+    if reg is None:
+        return {"ok": False, "error": "incident registry not available in this deployment"}
+    cleared = []
+    try:
+        if exclusive:
+            for other in reg.ALL:
+                if other != slug and reg.is_armed(other):
+                    reg.reset(other)
+                    cleared.append(other)
+        reg.reset(slug)                       # from the canonical snapshot, so a healed-by-agent module arms
+        msg = reg.set_state(slug, True)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+    if "\u2717" in msg:
+        return {"ok": False, "error": msg}
+    return {"ok": True, "armed": True, "message": msg, "cleared": cleared}
+
+
+def clear_incident(slug: str) -> dict:
+    """Put the module back to its canonical CORRECT source — the reset between rehearsals."""
+    reg = _registry()
+    if reg is None:
+        return {"ok": False, "error": "incident registry not available in this deployment"}
+    try:
+        return {"ok": True, "armed": False, "message": reg.reset(slug)}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+def file_incident(slug: str) -> dict:
+    """Raise this incident's ticket on the platform, exactly as the CLI would."""
+    t = _load_tickets().get(slug)
+    if not t:
+        return {"ok": False, "error": f"no ticket registered for {slug!r}"}
+    live = (_refresh_tickets() or {}).get(slug) or {}
+    if live.get("id") and live.get("stage") not in ("resolved", "escalated"):
+        # Already in flight. A second identical report is recognised as a duplicate and deliberately NOT
+        # investigated again, so the button would look broken. Hand back the one that is running.
+        return {"ok": True, "id": live["id"], "title": t["title"], "already": True}
+    try:
+        tok = _token()
+        if not tok:
+            return {"ok": False, "error": "could not sign in to the platform"}
+        r = _api("/tickets", {"source": "manual", "type": "bug", "problem_class": "code-bug",
+                              "repo": t["repo"], "ref": "main",
+                              "title": t["title"], "details": t["details"]}, tok)
+        _invalidate()                           # so the next poll reflects the new ticket immediately
+        return {"ok": True, "id": r.get("id", ""), "title": t["title"]}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+def approve_incident(slug: str) -> dict:
+    """Approve the open gate for this incident's ticket. The gate refuses a bare approval, so a written
+    justification travels with it — the same one a person would have to type in the console."""
+    t = (_refresh_tickets() or {}).get(slug) or {}
+    tid = t.get("id")
+    if not tid:
+        return {"ok": False, "error": "nothing to approve — this incident has no open ticket"}
+    try:
+        tok = _token()
+        aps = _api("/approvals", token=tok)
+        aps = aps if isinstance(aps, list) else aps.get("approvals", [])
+        mine = [a for a in aps if a.get("item_id") == tid and not a.get("resolved")]
+        if not mine:
+            return {"ok": False, "error": "no open approval gate for this ticket yet"}
+        _api(f"/approvals/{mine[0]['id']}",
+             {"decision": "approve",
+              "comment": "Reviewed from the Command Center: the reported case passes, the rest of the "
+                         "suite is unchanged, and the change is confined to the module the report named."},
+             tok)
+        _invalidate()
+        return {"ok": True, "id": tid}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
 # ── the two interactive surfaces (the audience types into these) ──────────────────────────────────────────
