@@ -398,8 +398,19 @@ def _load_tickets() -> dict:
         return INCIDENT_TICKETS
     try:
         import importlib.util
-        reg = os.path.join(os.path.dirname(APP_ROOT), "..", "scripts", "cc_incidents.py")
-        reg = os.path.realpath(reg)
+        # The registry lives in a different place in each layout, and getting it wrong is SILENT: the
+        # import fails, the incident list comes back empty, and the dashboard's plant / report / approve
+        # buttons report "incident list unavailable" on a site that is otherwise working perfectly. That
+        # is exactly what the deployed Command Center did — it only ever looked for the monorepo path.
+        candidates = [
+            os.path.join(APP_ROOT, "cc_incidents.py"),                        # deployed: beside the package
+            os.path.join(os.path.dirname(APP_ROOT), "..", "scripts", "cc_incidents.py"),   # monorepo
+            os.path.join(HERE, "cc_incidents.py"),                            # beside this file
+        ]
+        reg = next((os.path.realpath(c) for c in candidates if os.path.isfile(c)), "")
+        if not reg:
+            log_paths = ", ".join(os.path.realpath(c) for c in candidates)
+            raise FileNotFoundError(f"cc_incidents.py not found — looked in: {log_paths}")
         spec = importlib.util.spec_from_file_location("cc_incidents", reg)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
@@ -410,8 +421,8 @@ def _load_tickets() -> dict:
                                       "details": inc["ticket"]["details"],
                                       "repo": mod.mirror_repo(slug),
                                       "category": inc["category"], "surface": inc["surface"]}
-    except Exception:  # noqa: BLE001 — no registry (deployed copy) → the buttons just report it
-        pass
+    except Exception as e:  # noqa: BLE001 — no registry → the buttons report it rather than 500
+        print(f"[livechecks] incident registry unavailable: {type(e).__name__}: {e}", flush=True)
     return INCIDENT_TICKETS
 
 
