@@ -361,8 +361,14 @@ def _invalidate() -> None:
 def run_all() -> list:
     """Every check, evaluated now against the code currently on disk, plus who is working on it."""
     tickets = _refresh_tickets()
+    reg = _registry()
+    shown = set(getattr(reg, "DEMO", ())) if reg else set()
     out = []
     for c in CHECKS:
+        # The board shows the demo set. Everything else still runs and still has a repo; it is simply not
+        # what this demo has time to tell properly.
+        if shown and c["key"] not in shown:
+            continue
         row = {k: v for k, v in c.items() if k != "run"}
         try:
             actual, ok, error = c["run"]()
@@ -382,6 +388,60 @@ def run_all() -> list:
             row["ticket"] = {"stage": "unreported", "stage_label": "Not reported yet", "id": "", "pr_url": ""}
         out.append(row)
     return out
+
+
+def try_order(subtotal_rupees: float, discount_pct: float, tax_pct: float) -> dict:
+    """"Work out this order's total" — the Revenue surface's own calculation, run on demand.
+
+    The invoice figure beside it is not a second opinion from us: it is what the customer was told, worked
+    out the way the contract says (discount off, then tax on what they actually pay). The two disagreeing
+    is the whole report.
+    """
+    try:
+        total = _module("orders").order_total(int(round(subtotal_rupees * 100)),
+                                              discount_pct=discount_pct, tax_pct=tax_pct)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+    discounted = round(subtotal_rupees * (1 - discount_pct / 100.0), 2)
+    invoiced = int(round((discounted + discounted * tax_pct / 100.0) * 100))
+    return {"ok": True, "collected_cents": total, "invoiced_cents": invoiced,
+            "collected": f"₹{total / 100:,.2f}", "invoiced": f"₹{invoiced / 100:,.2f}",
+            "short_cents": invoiced - total, "matches": total == invoiced}
+
+
+def try_sla(raised: str, answered: str, sla_minutes: int) -> dict:
+    """"Is this ticket late?" — the escalation queue's own clock, run on demand."""
+    try:
+        esc = _module("escalation")
+        mins = esc.business_minutes_between(raised, answered)
+        breached = esc.is_breached(raised, answered, sla_minutes)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+    hours, rem = divmod(mins, 60)
+    return {"ok": True, "minutes": mins, "breached": bool(breached),
+            "elapsed": (f"{hours}h {rem}m" if hours else f"{rem}m"),
+            "sla_minutes": sla_minutes}
+
+
+# Ten audit rows written in one second — a single batch, which is where the export loses its place.
+_AUDIT_BATCH = [{"id": f"AUD-{i:04d}", "created_at": "2026-08-12T10:00:00Z"} for i in range(1, 11)]
+
+
+def try_export(page_size: int = 3) -> dict:
+    """"Send the auditor the export" — paged exactly the way the real job pages it."""
+    try:
+        pg = _module("pagination")
+        rows = pg.export_all(_AUDIT_BATCH, limit=max(1, int(page_size)))
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+    ids = [r["id"] for r in rows]
+    seen, dupes, missing = set(), [], []
+    for i in ids:
+        (dupes.append(i) if i in seen else seen.add(i))
+    missing = [r["id"] for r in _AUDIT_BATCH if r["id"] not in seen]
+    return {"ok": True, "in_table": len(_AUDIT_BATCH), "exported": len(ids),
+            "unique": len(seen), "duplicated": sorted(set(dupes)), "missing": missing,
+            "matches": len(ids) == len(_AUDIT_BATCH) and not dupes and not missing}
 
 
 # ── driving the demo from the dashboard ──────────────────────────────────────────────────────────────────
@@ -455,7 +515,7 @@ def incident_list() -> list:
     # browser, which no deployment of this app has — so they have no live card, their state cannot be
     # verified here, and offering them as buttons means offering a bug that cannot be seen to fail or seen
     # to heal. reg.LIVE_CHECKED is exactly the set with a check behind it.
-    for slug in reg.LIVE_CHECKED:
+    for slug in getattr(reg, "DEMO", reg.LIVE_CHECKED):
         inc = reg.INCIDENTS[slug]
         try:
             armed = reg.is_armed(slug)
