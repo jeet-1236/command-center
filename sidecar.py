@@ -414,6 +414,52 @@ def api_incident_clear(slug):
     return jsonify(res), (200 if res.get("ok") else 400)
 
 
+@app.post("/api/incidents/plant-all")
+def api_incidents_plant_all():
+    """Plant EVERY demo incident at once, so the board opens on a wall of real failures.
+
+    The one-at-a-time flow tells a clean story about a single bug. This tells the other one: a maintenance
+    backlog, five independent defects live at the same time, each cleared by its own ticket while the rest
+    stay red. That contrast is only honest because the five incidents touch five DIFFERENT modules, so
+    planting them together cannot make one defect's edit collide with another's.
+
+    POST {"slugs": [...]} to choose; the default is the demo set.
+    """
+    reg = livechecks._registry()
+    if reg is None:
+        return jsonify({"ok": False, "error": "incident registry not available in this deployment"}), 400
+    body = request.get_json(silent=True) or {}
+    slugs = body.get("slugs") or list(getattr(reg, "DEMO", ()) or reg.ORDER)
+    out = []
+    for s in slugs:
+        try:
+            r = livechecks.plant_incident(s, exclusive=False)   # never clear a sibling here
+        except Exception as e:  # noqa: BLE001 — one bad slug must not lose the rest of the board
+            r = {"ok": False, "slug": s, "error": str(e)[:160]}
+        out.append({"slug": s, **{k: v for k, v in r.items() if k in ("ok", "armed", "message", "error")}})
+    rows = livechecks.run_all()
+    return jsonify({"ok": True, "planted": out,
+                    "failing": sum(0 if x["ok"] else 1 for x in rows)})
+
+
+@app.post("/api/incidents/clear-all")
+def api_incidents_clear_all():
+    """Put every incident back to its canonical source — the reset between rehearsals."""
+    reg = livechecks._registry()
+    if reg is None:
+        return jsonify({"ok": False, "error": "incident registry not available in this deployment"}), 400
+    out = []
+    for s in list(getattr(reg, "ALL", ()) or reg.ORDER):
+        try:
+            out.append({"slug": s, **{k: v for k, v in livechecks.clear_incident(s).items()
+                                      if k in ("ok", "armed", "message", "error")}})
+        except Exception as e:  # noqa: BLE001
+            out.append({"slug": s, "ok": False, "error": str(e)[:160]})
+    rows = livechecks.run_all()
+    return jsonify({"ok": True, "cleared": out,
+                    "failing": sum(0 if x["ok"] else 1 for x in rows)})
+
+
 @app.post("/api/incident/<slug>/file")
 def api_incident_file(slug):
     """Raise the incident's ticket on the platform, in the reporter's words. AgentForge picks it up from
@@ -474,6 +520,68 @@ def admin_action():
     return jsonify({"ok": True, "message": f"{action} ran (dry-run, {fault} unchanged)."})
 
 
+def _split_diff(patch: str) -> list:
+    """Split a unified diff into one segment per file: [{"path": "b/-side path", "text": "..."}].
+
+    Handles BOTH shapes a run produces, because a real patch contains both:
+      • `diff --git a/X b/X` … (git-style, what the appended generated tests use)
+      • a bare `--- a/X` / `+++ b/X` pair with no git header (what difflib — and so `fix` — emits)
+
+    The path is taken from the `+++ b/…` line, which is the file actually written, and `/dev/null` on the
+    `---` side (a new file) is handled by that same rule. A segment runs until the next file header.
+    """
+    lines = patch.splitlines(keepends=True)
+    segs, cur = [], None
+
+    def _starts_here(i: int) -> bool:
+        if lines[i].startswith("diff --git "):
+            return True
+        # A `---` line is only a FILE header when a `+++` follows it; inside a hunk it is deleted content.
+        if not (lines[i].startswith("--- ")
+                and i + 1 < len(lines) and lines[i + 1].startswith("+++ ")):
+            return False
+        # …and it only opens a NEW segment when it is not the `---/+++` pair belonging to a `diff --git`
+        # header we just opened. Without this a git-style block is split in two and the same file is
+        # reported (and applied) twice.
+        return cur is None or cur["seen_plus"]
+
+    def _clean(p: str) -> str:
+        p = p.split("\t")[0].strip()          # difflib may append a tab-timestamp
+        if p.startswith(("a/", "b/")):
+            p = p[2:]
+        return p
+
+    for i, ln in enumerate(lines):
+        if _starts_here(i):
+            cur = {"path": "", "text": "", "seen_plus": False}
+            segs.append(cur)
+            if ln.startswith("diff --git "):
+                # provisional: a header-only segment (no +++ line) must still be attributable, or a patch
+                # aimed somewhere it may not write would be silently dropped instead of named and refused
+                cur["path"] = _clean(ln.split(" b/")[-1])
+        if cur is None:
+            continue                      # preamble before the first header — not part of any file
+        cur["text"] += ln
+        if ln.startswith("+++ "):
+            cur["seen_plus"] = True
+            p = _clean(ln[4:])
+            if p and p != "dev/null":
+                cur["path"] = p           # the +++ side is the file actually written — it wins
+    return [{"path": s["path"], "text": s["text"]}
+            for s in segs if s["path"] and s["path"] != "dev/null"]
+
+
+def _writable_here(path: str) -> bool:
+    """May this patch segment be written into the served app?
+
+    `startswith("commandcenter/")` alone is not enough: `commandcenter/../../agents/llm.py` passes it and
+    escapes the app. Normalise first, then require the result to still be inside `commandcenter/`.
+    """
+    p = os.path.normpath(path).replace("\\", "/")
+    return not (p.startswith("/") or p.startswith("../")) and (
+        p == "commandcenter" or p.startswith("commandcenter/"))
+
+
 @app.post("/admin/deploy")
 def admin_deploy():
     """Deploy an approved fix INTO the served app: apply a unified diff to `commandcenter/`.
@@ -497,10 +605,28 @@ def admin_deploy():
     # as a bad diff from the fix agent rather than as us having damaged it in transit.
     if not patch.endswith("\n"):
         patch += "\n"
-    targets = {ln.split(" b/")[-1].strip() for ln in patch.splitlines() if ln.startswith("diff --git ")}
-    stray = sorted(t for t in targets if not t.startswith("commandcenter/"))
-    if stray:
-        return jsonify({"ok": False, "error": f"refusing a patch that touches {stray}"}), 400
+    # KEEP ONLY THE `commandcenter/` PART, rather than refusing the whole patch.
+    #
+    # A real run's patch is MIXED: `fix` emits a plain unified diff (`--- a/… / +++ b/…`, no `diff --git`
+    # header, because it comes from difflib), and the orchestrator then APPENDS the kept generated test as
+    # a `diff --git` new-file block at the repo root. Two bugs followed from reading only `diff --git`:
+    #   • a patch with no `diff --git` at all (fix-only) yielded NO targets, so `applied` was computed over
+    #     an empty set and came back False even when the deploy had worked;
+    #   • a patch whose only `diff --git` was the generated test was REFUSED outright — measured live,
+    #     HTTP 400 "refusing a patch that touches ['test_reproduction_generated.py']" — so the approved
+    #     module fix never deployed and the dashboard stayed red under a successful approval.
+    # Splitting per file keeps the safety property that matters (nothing outside `commandcenter/` is ever
+    # written here) without letting a harmless test file veto the fix the reviewer actually approved.
+    segments = _split_diff(patch)
+    keep = [s for s in segments if _writable_here(s["path"])]
+    dropped = sorted(s["path"] for s in segments if not _writable_here(s["path"]))
+    if not keep:
+        return jsonify({"ok": False, "applied": False, "dropped": dropped,
+                        "error": (f"refusing a patch that touches {dropped} — this endpoint may only "
+                                  f"write commandcenter/" if dropped
+                                  else "no commandcenter/ changes in this patch")}), 400
+    targets = {s["path"] for s in keep}
+    patch = "".join(s["text"] for s in keep)
     root = livechecks.APP_ROOT
 
     def _digests():
@@ -540,7 +666,7 @@ def admin_deploy():
             pass
     # Re-run the checks now so the answer says what the app does, not just that a file was written.
     rows = livechecks.run_all()
-    return jsonify({"ok": True, "applied": applied, "files": sorted(targets),
+    return jsonify({"ok": True, "applied": applied, "files": sorted(targets), "dropped": dropped,
                     "failing": sum(0 if x["ok"] else 1 for x in rows),
                     "message": ("deployed — the served app now runs the approved fix" if applied
                                 else f"patch did not apply (already deployed?) — {why}")})
