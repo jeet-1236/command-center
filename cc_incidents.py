@@ -81,6 +81,12 @@ INCIDENTS = {
              """    digits = phone.replace(" ", "")
     return len(digits) == 10 and digits.isdigit()"""),
         ],
+                "story": (
+            "Kavya on the Bengaluru desk is adding a customer she has just got off the phone with — Meera D'Souza, landline (022) 2654 0000. The form marks the number invalid. She tries the mobile with the country code, +91 98765 43210, and that is refused too. She drops the country code and types 98765 43210 and it saves."
+        ),
+        "oracle": (
+            "The customer is on the phone on that number, so the number is real. And the same number saves once the country code is removed — so it is the form's rule, not the number."
+        ),
         "ticket": {
             "title": "Sales can't save contacts — the CRM form rejects valid Indian numbers and names",
             "details": (
@@ -103,42 +109,39 @@ INCIDENTS = {
 
     # ── 2 · uncaught null → 500 where a 400 was owed ──────────────────────────────────────────────────────
     "intake": {
-        "title": "Empty note crashes POST /api/notes with a 500 instead of returning a 400",
+        "title": "Recording a payment fails when the amount is typed as a plain number",
         "module": "commandcenter/intake.py",
-        "category": "Uncaught null / exception handling",
-        "surface": "Support · Add note to ticket",
-        "symptom": "an empty optional field takes the endpoint down with a 500 instead of a clean 400",
-        "edits": [
-            ("""    ticket = payload.get("ticket_id")
-    if not ticket:
-        return 400, {"error": "ticket_id is required"}
-    notes = payload.get("notes", "")
-    text = (notes or "").strip()""",
-             """    ticket = payload.get("ticket_id")
-    notes = payload.get("notes", "")
-    text = notes.strip()
-    if not ticket:
-        return 400, {"error": "ticket_id is required"}"""),
-        ],
+        "category": "Unhandled input type",
+        "surface": "Finance · Record a payment",
+        "symptom": "a round payment amount crashes the form; the same amount with a comma saves",
+        "edits": [('    if value is None or (isinstance(value, str) and not value.strip()):\n        raise ValueError("an amount is required")\n    if isinstance(value, bool):                       # bool is an int in Python; a tick-box is not an amount\n        raise ValueError("that is not an amount")\n    if isinstance(value, int):\n        cents = value * 100\n    elif isinstance(value, float):\n        cents = round(value * 100)\n    elif isinstance(value, str):\n        cleaned = value.strip()\n        for ch in _AMOUNT_NOISE:\n            cleaned = cleaned.replace(ch, "")\n        if not cleaned:\n            raise ValueError("an amount is required")\n        try:\n            cents = round(float(cleaned) * 100)\n        except ValueError:\n            raise ValueError(f"{value!r} is not an amount") from None\n    else:\n        raise ValueError("that is not an amount")\n    if cents < 0:\n        raise ValueError("an amount cannot be negative")\n    return int(cents)', '    cleaned = value.strip().replace(",", "")\n    return int(round(float(cleaned) * 100))')],
+        "story": (
+            "Priya in Finance is recording yesterday's cleared payments against their invoices. She types "
+            "1200 into the amount box for INV-2291, hits save, and the page says something went wrong. She "
+            "tries again with 1,200.00 — exactly as it is written on the remittance advice — and it saves "
+            "immediately. She has forty payments to record and about half of them are round numbers."
+        ),
+        "oracle": (
+            "The same payment saves when it is typed with a comma and fails when it is not, so it is the "
+            "form and not the payment. Nothing reached the ledger either time it failed."
+        ),
         "ticket": {
-            "title": "POST /api/notes returns 500 when the note field is left empty",
+            "title": "Recording a payment fails unless the amount is typed with a comma",
             "details": (
-                "Our ticket integration is throwing 500s and paging the on-call. It happens whenever a note "
-                "is submitted with the note box left empty: the client sends \"notes\": null (that is what "
-                "the form binding produces for an empty box) and the API answers 500 Internal Server Error. "
-                "The log line is AttributeError: 'NoneType' object has no attribute 'strip' in the notes "
-                "handler (commandcenter/intake.py).\n\n"
-                "Two things are wrong from our side. An empty note is legitimate — it should be accepted as "
-                "an empty note, same as leaving the key out entirely, which does work. And when a request "
-                "genuinely is unusable (no ticket_id) we need the 400 with the field name, which is what the "
-                "API documents — a 500 tells our integration it was OUR fault and to retry, so it retries "
-                "forever and pages someone every time. Please make the handler answer 201 or 400 for "
-                "anything a client can send, and never raise."
+                "Finance cannot record payments with round amounts. Typing 1200 into the amount box and "
+                "saving returns a server error; typing 1,200.00 for the same payment saves immediately. "
+                "It is the same money either way, so it is the form, not the payment.\n\n"
+                "It is happening on roughly half of yesterday's batch, because round amounts are common, "
+                "and every failure pages the on-call with a 500. Nothing reaches the ledger when it fails, "
+                "so the payment is simply lost until somebody retypes it.\n\n"
+                "The amount box should take the amount however it is written — 1200, \"1200\", "
+                "\"1,200.00\", the value pasted from the bank statement with the currency symbol on it, or "
+                "a spreadsheet cell with spaces around it. Something that is genuinely not an amount (an "
+                "empty box, an invoice reference typed into the wrong field) should say which field is "
+                "wrong, not return a server error. The handler is commandcenter/intake.py."
             ),
         },
     },
-
-    # ── 3 · incorrect calculation logic ───────────────────────────────────────────────────────────────────
     "orders": {
         "title": "Discount applied twice — VAT charged on an already-discounted amount, discounted again",
         "module": "commandcenter/orders.py",
@@ -154,6 +157,12 @@ INCIDENTS = {
     tax = round(taxable * tax_pct / 100.0)
     return discounted + tax + shipping_cents"""),
         ],
+                "story": (
+            "An order for ₹10,000 with a 10% festive promo and 20% GST was placed yesterday. The customer's invoice shows ₹10,800. Accounts pulled the settlement file from the payment processor in the morning and that order settled at ₹10,620."
+        ),
+        "oracle": (
+            'Two independent records of the same order disagree by ₹180: the invoice we issued the customer and the settlement the processor actually took. Orders without a promo code reconcile exactly, so it is the promo path.'
+        ),
         "ticket": {
             "title": "International orders with a promo code are undercharging — VAT is short on every one",
             "details": (
@@ -185,6 +194,12 @@ INCIDENTS = {
     local = stamp + dt.timedelta(hours=SERVER_UTC_OFFSET_HOURS)
     return local.date().isoformat()"""),
         ],
+                "story": (
+            "The Monday revenue report was ₹1.2 lakh lower than the team expected and Tuesday's was higher by the same amount. Finance checked the orders behind it: three orders placed after 11pm on Monday are counted on Tuesday."
+        ),
+        "oracle": (
+            "The payment processor's own daily settlement puts those three orders on Monday. Two systems, the same orders, different days — and the two days are wrong by exactly the same amount, which is what a boundary being drawn in the wrong place looks like."
+        ),
         "ticket": {
             # Worded to describe the COMPUTATION, not the numbers. An earlier draft led with "the report
             # disagrees with the settlement file" and "the books are wrong", and the planner reasonably read
@@ -223,6 +238,12 @@ INCIDENTS = {
         "symptom": "a fully healthy system reads as critical — the whole dashboard looks like it is on fire",
         "legacy": True,
         "edits": [("    return BRAND_OK", '    return "#f85149"')],
+                "story": (
+            'The operations lead opened the Command Center on Monday and every status indicator on the board was red — services, KPIs, the lot — so he started an incident call. Nothing was actually down.'
+        ),
+        "oracle": (
+            'The monitoring underneath the board reports every service healthy, and the services themselves are answering. The board is the only thing saying otherwise.'
+        ),
         "ticket": {
             "title": "The whole dashboard shows red even though nothing is wrong",
             "details": (
@@ -247,6 +268,12 @@ INCIDENTS = {
         "surface": "Revenue · Refunds",
         "symptom": "a multi-line refund allocates a penny more or less than the customer was refunded",
         "edits": [('    base = sum(line_cents)\n    n = len(line_cents)\n\n    if base == 0:\n        # No proportions to take. Spread evenly and give the remainder to the earliest lines, so the split\n        # is still exact and still deterministic.\n        each, extra = divmod(total_cents, n)\n        return [each + (1 if i < extra else 0) for i in range(n)]\n\n    # The whole-cent part of each exact share, and the fraction each line had to give up to get there.\n    # Kept as integers (numerator over the common denominator `base`) so there is no float anywhere near\n    # the money — a float share of 33.33333333333333 compares unpredictably against another.\n    floors: list[int] = []\n    remainders: list[int] = []\n    for c in line_cents:\n        whole, rem = divmod(total_cents * c, base)\n        floors.append(whole)\n        remainders.append(rem)\n\n    # Hand out the leftover cents, largest discarded fraction first, ties by line order.\n    leftover = total_cents - sum(floors)\n    order = sorted(range(n), key=lambda i: (-remainders[i], i))\n    for i in order[:leftover]:\n        floors[i] += 1\n    return floors', '    base = sum(line_cents)\n    # Each line gets its share of the refund, rounded to the nearest cent.\n    return [round(total_cents * c / base) for c in line_cents]')],
+                "story": (
+            'A customer returned two items from a three-line order and was refunded ₹10,000. Their bank statement shows ₹10,000 credited. Our ledger shows three line credits of ₹3,333 — ₹9,999.'
+        ),
+        "oracle": (
+            "The customer's statement and our ledger differ by ₹1 on a refund we made ourselves. The refund left our account in one number and landed in our books as three that do not add up to it."
+        ),
         "ticket": {
             "title": "Refunds do not reconcile — the per-line split is a penny out on multi-line orders",
             "details": (
@@ -268,6 +295,12 @@ INCIDENTS = {
         "surface": "Support · Escalation queue",
         "symptom": "Monday's queue shows every weekend ticket as breached",
         "edits": [("    total = 0\n    day = start.date()\n    last_day = end.date()\n    while day <= last_day:\n        if day.weekday() < 5:                       # Saturday is 5, Sunday is 6\n            window_open = datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc) \\\n                .replace(hour=DAY_START_HOUR)\n            window_shut = window_open.replace(hour=DAY_END_HOUR)\n            # The part of THIS day's window that the interval actually covers.\n            covered_from = max(start, window_open)\n            covered_to = min(end, window_shut)\n            if covered_to > covered_from:\n                total += int((covered_to - covered_from).total_seconds() // 60)\n        day += timedelta(days=1)\n    return total", '    # Elapsed time between the two timestamps, in whole minutes.\n    return int((end - start).total_seconds() // 60)')],
+                "story": (
+            'A customer raised a ticket at 16:30 on Friday. The desk answered it at 09:30 on Monday, half an hour after opening. The escalation queue had it flagged as breached all weekend and it is still red on Monday morning, along with everything else raised after Friday lunchtime.'
+        ),
+        "oracle": (
+            'The support contract says four WORKING hours, and the desk works 09:00-17:00 Monday to Friday. Between Friday 16:30 and Monday 09:30 the desk was open for one hour. One is not four.'
+        ),
         "ticket": {
             "title": "Every ticket raised on a Friday shows as breached on Monday",
             "details": (
@@ -289,6 +322,12 @@ INCIDENTS = {
         "surface": "Compliance · Audit export",
         "symptom": "the export is short a few rows and contains a few twice",
         "edits": [('    if limit <= 0:\n        raise ValueError(f"limit must be positive, got {limit}")\n    ordered = sorted(rows, key=_key)\n    if after is None:\n        return ordered[:limit]\n    cursor = _key(after)\n    # Strictly after the cursor in the TOTAL order — a later timestamp, or the same timestamp and a later\n    # id. Comparing the tuples does exactly that; comparing the fields separately does not.\n    return [r for r in ordered if _key(r) > cursor][:limit]', '    ordered = sorted(rows, key=lambda r: r.get("created_at", ""))\n    if after is None:\n        return ordered[:limit]\n    # Resume after the cursor\'s timestamp.\n    return [r for r in ordered if r.get("created_at", "") > after.get("created_at", "")][:limit]')],
+                "story": (
+            'The quarterly audit export was sent to the external auditor. They counted the rows against a direct query on the audit table and sent it back: 41,318 rows in the export, 41,326 in the table, and eight of the rows in the export appear twice.'
+        ),
+        "oracle": (
+            "The auditor's own count of the source table is the reference, and the export does not match it. The missing rows are all in batches written within the same second, which is where the export's page boundaries fall."
+        ),
         "ticket": {
             "title": "The audit export does not match the table — rows missing, others duplicated",
             "details": (
@@ -320,6 +359,12 @@ INCIDENTS = {
                 total += int(r["amount_usd"])
     return total""",
                    '    return sum(int(r["amount_usd"]) for r in rows if is_open(r))')],
+                "story": (
+            'The board pack quotes Pipeline value at ₹2.04 crore. The sales director exported the same open deals from the CRM and added them up: ₹1.84 crore.'
+        ),
+        "oracle": (
+            'The CRM export is the system of record for deals and it totals ₹1.84 crore. The ₹20 lakh gap is exactly the three deals that settle in more than one currency.'
+        ),
         "ticket": {
             "title": "Pipeline value is overstating — multi-currency deals are counted twice",
             "details": (
@@ -474,6 +519,30 @@ REPORTER = {
         "details": 'Our auditor rejected the quarterly export. It has 41,318 rows where the table has 41,326, and 8 of the rows it does have appear twice. The missing ones are not random — they are all in batches written within the same second.',
     },
 }
+
+
+def reporter_text(slug: str) -> str:
+    """What the CLIENT writes: what they were doing, what happened, and how they know it is wrong. Names no
+    file and asks for no particular fix — on that surface, working that out is the agents' job."""
+    inc = INCIDENTS[slug]
+    r = REPORTER.get(slug, {})
+    parts = [p for p in (inc.get("story"), r.get("details")) if p]
+    if inc.get("oracle"):
+        parts.append("How we know this is wrong: " + inc["oracle"])
+    return "\n\n".join(parts)
+
+
+def report_text(slug: str) -> str:
+    """The ticket body as a reporter would actually write it: what happened, how we know it is wrong, then
+    what is being asked for. Built from the incident's own story/oracle so the two cannot drift apart."""
+    inc = INCIDENTS[slug]
+    parts = []
+    if inc.get("story"):
+        parts.append(inc["story"])
+    if inc.get("oracle"):
+        parts.append("How we know this is wrong: " + inc["oracle"])
+    parts.append(inc["ticket"]["details"])
+    return "\n\n".join(parts)
 
 
 def mirror_repo(slug: str) -> str:
