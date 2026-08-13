@@ -883,10 +883,66 @@ let walkKey=null, INCIDENTS=[], walkBusy='', walkMsg=null, walkLoad='idle';
 function walk_sk(){
   return `<div id="wk-banner"></div>
   <div class="card" style="margin-bottom:14px">
+    <div class="hd"><h3>The board</h3><span class="muted" id="wk-board-count"></span></div>
+    <div class="form" style="margin-bottom:10px">
+      <button class="btn" id="wk-plant-all" onclick="walkPlantAll()">Plant every bug</button>
+      <button class="btn ghost" id="wk-clear-all" onclick="walkClearAll()">Reset all</button>
+    </div>
+    <div id="wk-board"></div>
+  </div>
+  <div class="card" style="margin-bottom:14px">
     <div class="hd"><h3>Pick an incident</h3><span class="muted" id="wk-count"></span></div>
     <div class="form" id="wk-picker"></div>
   </div>
   <div id="wk-body"></div>`;
+}
+
+/* THE BOARD — every incident at once, each red or green by ITS OWN live check.
+   The status comes from CHECKS (the app's real functions, re-run every poll), never from the `armed`
+   flag: after an approved fix is deployed the source is correct while the incident may still be recorded
+   as planted, and a card keyed on the flag would sit red under a fix that demonstrably works. */
+function walkBoard(){
+  const el=$('wk-board'); if(!el) return;
+  const rows=INCIDENTS.map(i=>{
+    const c=CHECKS.find(x=>x.key===i.slug)||null;
+    const live=c?(c.ok?'ok':'crit'):null;              // browser-only incidents are not polled
+    const label=c?(c.ok?'GREEN':'RED'):(i.armed?'planted':'healthy');
+    return {i,live,label,c};
+  });
+  const red=rows.filter(r=>r.live==='crit').length;
+  const n=rows.filter(r=>r.c).length;
+  $('wk-board-count').textContent=`${red} of ${n} failing right now`;
+  el.innerHTML=`<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">`
+    +rows.map(({i,live,label,c})=>`
+    <div class="card" style="cursor:pointer" onclick="walkPick('${i.slug}')">
+      <div class="stripe ${live==='crit'?'crit':live==='ok'?'':'acc'}"></div>
+      <div class="hd">
+        <h3>${i.slug}</h3>
+        <span class="pill ${live==='crit'?'crit':live==='ok'?'ok':'info'}"><i class="pd"></i>${label}</span>
+      </div>
+      <div class="muted" style="font-size:12px;margin-bottom:6px">${i.category||''}</div>
+      <div style="font-size:13px">${i.title||''}</div>
+      ${c&&!c.ok?`<div class="mono" style="font-size:11.5px;margin-top:8px;opacity:.85">${
+        (c.actual||'').toString().slice(0,90)}</div>`:''}
+    </div>`).join('')+`</div>`;
+}
+
+async function walkPlantAll(){
+  const b=$('wk-plant-all'); if(b){b.disabled=true;b.textContent='Planting…';}
+  try{ await fetch('/api/incidents/plant-all',{method:'POST',
+        headers:{'content-type':'application/json'},body:'{}'}); }
+  catch(e){ /* the poll will show whatever actually happened */ }
+  if(b){b.disabled=false;b.textContent='Plant every bug';}
+  walk_up();
+}
+
+async function walkClearAll(){
+  const b=$('wk-clear-all'); if(b){b.disabled=true;b.textContent='Resetting…';}
+  try{ await fetch('/api/incidents/clear-all',{method:'POST',
+        headers:{'content-type':'application/json'},body:'{}'}); }
+  catch(e){ /* ditto */ }
+  if(b){b.disabled=false;b.textContent='Reset all';}
+  walk_up();
 }
 
 let walkFocus=false;          // true once a bug is chosen: show that one and nothing else
@@ -961,6 +1017,7 @@ function walk_up(){
   if(!walkKey || !INCIDENTS.some(i=>i.slug===walkKey)){
     const firstArmed=INCIDENTS.find(i=>i.armed); walkKey=(firstArmed||INCIDENTS[0]).slug;
   }
+  walkBoard();                       // the whole board, every poll — independent of which one is selected
   const planted=INCIDENTS.filter(i=>i.armed).length;
   if(walkFocus){
     // One bug on screen. The others are not dimmed or scrolled past — they are gone, so there is nothing
