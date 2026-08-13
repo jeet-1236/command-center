@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Support · Ticket TCK-4471</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <h1>Ticket TCK-4471 — Northwind Traders</h1>
+  <p class="sub">Add a note, or close the ticket. Used on a phone as often as on a laptop.</p>
+
+  <div class="panel">
+    <div class="row">
+      <input type="text" id="note-input" placeholder="Add a note for the customer record" autocomplete="off">
+      <button id="save-note">Save note</button>
+      <button id="open-confirm" class="ghost">Close ticket</button>
+    </div>
+    <p id="submit-status" data-saved="no">No notes yet</p>
+    <ul id="note-list"></ul>
+  </div>
+
+  <div class="modal-scrim" id="confirm-modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+      <h2 id="confirm-title">Close this ticket?</h2>
+      <p>The customer will be notified that their request has been resolved. You can reopen it for 30 days.</p>
+      <div class="modal-actions">
+        <button class="ghost" id="confirm-cancel">Cancel</button>
+        <button id="confirm-close">Close ticket</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
