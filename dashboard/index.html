@@ -150,7 +150,11 @@
   .chk.bad{border-left-color:var(--crit)}
   .chk .cat{font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text-3)}
   .chk .ttl{font-size:13.5px;font-weight:640;margin:5px 0 2px}
-  .chk .what{color:var(--text-2);font-size:12px;margin-bottom:10px}
+  .chk .story{margin:2px 0 10px;font-size:12.5px;line-height:1.55;color:var(--text-2);
+  border-left:2px solid var(--border-2);padding-left:10px;font-style:italic}
+.chk .oracle{margin:10px 0 0;font-size:12px;line-height:1.5;color:var(--text-2)}
+.chk .oracle b{color:var(--text);font-style:normal}
+.chk .what{color:var(--text-2);font-size:12px;margin-bottom:10px}
   .kv{display:grid;grid-template-columns:74px 1fr;gap:4px 10px;font-size:12px;align-items:baseline}
   .kv .k{color:var(--text-3);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
   .kv .v{font-family:var(--mono);word-break:break-word}
@@ -674,13 +678,13 @@ function live_sk(){
         <button class="btn ghost" onclick="lvFill('initial')">Name with an initial</button>
       </div>
       <div class="resp idle" id="lv-contact-out">Not submitted yet.</div></div>
-    <div class="card"><div class="hd"><h3>Add note to ticket</h3><span class="muted">POST /api/notes</span></div>
+    <div class="card"><div class="hd"><h3>Record a payment</h3><span class="muted">POST /api/payments</span></div>
       <p class="muted" style="margin:0 0 10px;font-size:12px">An empty note box sends <span class="mono">"notes": null</span> — the case the integration is hitting (commandcenter/intake.py).</p>
       <div class="form">
-        <input class="inp" id="lv-ticket" value="TCK-4471" placeholder="Ticket id" autocomplete="off">
-        <input class="inp" id="lv-note" value="" placeholder="Note (leave empty to reproduce)" autocomplete="off">
+        <input class="inp" id="lv-ticket" value="INV-2291" placeholder="Invoice reference" autocomplete="off">
+        <input class="inp" id="lv-note" value="1200" placeholder="Amount" autocomplete="off">
       </div>
-      <div class="form"><button class="btn" onclick="lvNote()">Add note</button></div>
+      <div class="form"><button class="btn" onclick="lvNote()">Record payment</button></div>
       <div class="resp idle" id="lv-note-out">Not submitted yet.</div></div>
   </div>`;
 }
@@ -708,12 +712,14 @@ function live_up(){
   $('lv-cards').innerHTML=shown.map(c=>`<div class="card chk ${c.ok?'':'bad'} ${stageOf(c)}">
     <div class="hd"><span class="cat">${c.category}</span>${statPill(c.ok?'ok':'crit',c.ok?'PASS':'FAIL')}</div>
     <div class="ttl">${c.title}</div>
+    ${c.story?`<p class="story">${esc(c.story)}</p>`:``}
     <div class="what">${c.what}</div>
     <div class="kv">
       <span class="k">Input</span><span class="v">${esc(c.input)}</span>
       <span class="k">Expected</span><span class="v want">${esc(c.expected)}</span>
       <span class="k">Actual</span><span class="v ${c.ok?'got-ok':'got-bad'}">${esc(c.actual)}</span>
     </div>
+    ${c.oracle?`<p class="oracle"><b>How we know:</b> ${esc(c.oracle)}</p>`:``}
     ${stageRow(c)}
     <div class="src"><span class="mono">${c.module}</span><span>${c.surface}</span></div></div>`).join('');
 }
@@ -752,17 +758,20 @@ async function lvContact(){
   }catch(e){out.className='resp bad';out.textContent='request failed: '+e;}
 }
 async function lvNote(){
-  const out=$('lv-note-out');out.className='resp idle';out.textContent='Posting…';
-  const note=$('lv-note').value;
-  // An empty box is sent as JSON null — exactly what the reporting integration sends.
-  const body={ticket_id:$('lv-ticket').value,notes:note===''?null:note};
+  const out=$('lv-note-out');out.className='resp idle';out.textContent='Recording…';
+  const typed=$('lv-note').value.trim();
+  /* A round amount typed into a number field arrives as a JSON NUMBER, and that is the reported case —
+     so send it as one when it looks like a bare number, and as the typed string otherwise. Sending
+     everything as a string would quietly avoid the very bug the card is about. */
+  const amount = /^\d+(\.\d+)?$/.test(typed) ? Number(typed) : typed;
+  const body={invoice_id:$('lv-ticket').value, amount:amount};
   try{
-    const r=await fetch('/api/notes',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+    const r=await fetch('/api/payments',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
     const d=await r.json();
     const ok=r.status<400;
     out.className='resp '+(ok?'ok':'bad');
     out.textContent=(ok?'✓ ':'✕ ')+'HTTP '+r.status+' — '+(d.crashed?('the endpoint crashed: '+d.exception)
-      :(ok?('note stored as "'+((d.body||{}).notes||'')+'"'):((d.body||{}).error||JSON.stringify(d.body))));
+      :(ok?((d.body||{}).recorded||'recorded'):((d.body||{}).error||JSON.stringify(d.body))));
   }catch(e){out.className='resp bad';out.textContent='request failed: '+e;}
 }
 async function pollChecks(){
@@ -942,12 +951,15 @@ function walk_up(){
   const evidence = c
     ? `<div class="card chk ${c.ok?'':'bad'}">
         <div class="hd"><span class="cat">${c.category}</span>${statPill(c.ok?'ok':'crit',c.ok?'PASS':'FAIL')}</div>
-        <div class="ttl">${c.title}</div><div class="what">${c.what}</div>
+        <div class="ttl">${c.title}</div>
+        ${inc.story?`<p class="story">${esc(inc.story)}</p>`:``}
+        <div class="what">${c.what}</div>
         <div class="kv">
           <span class="k">Input</span><span class="v">${esc(c.input)}</span>
           <span class="k">Expected</span><span class="v want">${esc(c.expected)}</span>
           <span class="k">Actual</span><span class="v ${c.ok?'got-ok':'got-bad'}">${esc(c.actual)}</span>
         </div>
+        ${inc.oracle?`<p class="oracle"><b>How we know:</b> ${esc(inc.oracle)}</p>`:``}
         <div class="src"><span class="mono">${c.module}</span><span>${c.surface}</span></div>
       </div>`
     : `<div class="card chk ${inc.armed?'bad':''}">
