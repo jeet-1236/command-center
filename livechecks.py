@@ -93,15 +93,15 @@ def _check_contacts():
 
 
 def _check_intake():
-    handle = _module("intake").handle_note
+    record = _module("intake").record_payment
     try:
-        status, body = handle({"ticket_id": "TCK-4471", "notes": None})
+        status, body = record({"invoice_id": "INV-2291", "amount": 1200})
     except Exception:  # noqa: BLE001 — an uncaught exception IS the symptom under test
         line = traceback.format_exc().strip().splitlines()[-1]
         return f"500 Internal Server Error — {line}", False, line
     if status != 201:
         return f"{status} {body.get('error', body)}", False, ""
-    return f"201 Created — note stored as {body.get('notes', '')!r}", True, ""
+    return f"201 Created — {body.get('recorded', '')}", True, ""
 
 
 def _check_orders():
@@ -215,11 +215,12 @@ CHECKS = [
     },
     {
         "key": "intake", "module": "commandcenter/intake.py",
-        "surface": "Support · Add note to ticket", "category": "Uncaught null / exception handling",
-        "title": "Attaching a note with the note box left empty",
-        "what": "POST /api/notes with notes = null, which is what an empty box sends.",
-        "input": '{"ticket_id": "TCK-4471", "notes": null}',
-        "expected": "201 Created — note stored as ''",
+        "surface": "Finance · Record a payment", "category": "Unhandled input type",
+        "title": "Recording a ₹1,200 payment against an invoice",
+        "what": "POST /api/payments with the amount typed as a plain number, which is what a round "
+                "amount in a number field sends.",
+        "input": '{"invoice_id": "INV-2291", "amount": 1200}',
+        "expected": "201 Created — ₹1,200.00 against INV-2291",
         "run": _check_intake,
     },
     {
@@ -367,7 +368,7 @@ def run_all() -> list:
             actual, ok, error = c["run"]()
         except Exception as e:  # noqa: BLE001 — a broken check must not take the dashboard down
             actual, ok, error = f"check could not run: {type(e).__name__}: {e}", False, str(e)
-        row.update({"actual": actual, "ok": bool(ok), "error": error})
+        row.update({"actual": actual, "ok": bool(ok), "error": error, **_story(c["key"])})
         t = tickets.get(c["key"])
         # A ticket describes the CURRENT failure only while it is still open, or once the check passes. A
         # FAILING check whose newest ticket is already resolved or escalated belongs to a previous cycle —
@@ -418,7 +419,7 @@ def _load_tickets() -> dict:
         for slug in mod.ALL:
             inc = mod.INCIDENTS[slug]
             INCIDENT_TICKETS[slug] = {"title": inc["ticket"]["title"],
-                                      "details": inc["ticket"]["details"],
+                                      "details": mod.report_text(slug),
                                       "repo": mod.mirror_repo(slug),
                                       "category": inc["category"], "surface": inc["surface"]}
     except Exception as e:  # noqa: BLE001 — no registry → the buttons report it rather than 500
@@ -430,6 +431,17 @@ def _registry():
     """The incident registry module itself, for the operations that edit source (arm / heal / reset)."""
     _load_tickets()
     return _REG["mod"]
+
+
+def _story(slug: str) -> dict:
+    """The incident's narrative, if the registry is available: who hit it, and how they know.
+
+    Loads the registry rather than reading the cached handle — run_all() does not go through the ticket
+    loader, so the handle is still None on the first poll and the cards came up with no story on them.
+    """
+    reg = _registry()
+    inc = (getattr(reg, "INCIDENTS", {}) or {}).get(slug, {}) if reg else {}
+    return {"story": inc.get("story", ""), "oracle": inc.get("oracle", "")}
 
 
 def incident_list() -> list:
@@ -452,6 +464,7 @@ def incident_list() -> list:
         out.append({"slug": slug, "title": inc["ticket"]["title"], "category": inc["category"],
                     "surface": inc["surface"], "module": inc["module"], "armed": armed,
                     "browser": bool(inc.get("browser")), "polled": slug in INCIDENT_KEYS,
+                    "story": inc.get("story", ""), "oracle": inc.get("oracle", ""),
                     "ticket": tickets.get(slug) or {}})
     return out
 
@@ -554,6 +567,17 @@ def try_contact(name: str, phone: str) -> dict:
     return {"saved": not errors, "errors": errors,
             "message": ("Contact saved to the CRM." if not errors
                         else "Not saved — invalid " + " and ".join(errors) + ".")}
+
+
+def try_payment(payload: dict) -> dict:
+    """The Record-a-payment form posts here. Returns whatever the handler answered — including the 500 it
+    is currently answering with, which is the whole point of the incident."""
+    try:
+        status, body = _module("intake").record_payment(payload)
+        return {"status": status, "body": body, "crashed": False}
+    except Exception as e:  # noqa: BLE001 — the crash IS the symptom; report it rather than 500 the sidecar
+        return {"status": 500, "body": {"error": "Internal Server Error"}, "crashed": True,
+                "exception": f"{type(e).__name__}: {e}"}
 
 
 def try_note(payload: dict) -> dict:
