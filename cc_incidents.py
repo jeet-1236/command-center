@@ -462,11 +462,19 @@ BROWSER = ("uistate", "uilayout")
 LIVE_CHECKED = ORDER + ("theme", "pipeline")
 
 # The set the Command Center actually SHOWS. Everything in LIVE_CHECKED works; this is a narrower choice
-# about what a demo has time to tell properly. Each of these five has a person behind it doing something
-# recognisable — entering a customer, recording a payment, checking a total, chasing an SLA, sending an
-# export to an auditor — and a surface on the board where you can do that thing yourself and watch it go
-# wrong. The others stay in the registry, keep their repos, and can be put back by adding them here.
-DEMO = ("contacts", "intake", "orders", "escalation", "pagination")
+# about what a demo has time to tell properly. The others stay in the registry, keep their repos, and can
+# be put back by adding them here — nothing else needs to change, because `run_all()` filters on this
+# tuple and the board, the plant-all endpoint and the console presets are all generated from it.
+#
+# THREE, deliberately, and each a different KIND of defect so the three together make an argument that
+# one repeated three times would not:
+#   contacts — input a human typed is wrongly rejected  (validation)
+#   orders   — a number is wrong and two systems disagree about it  (calculation)
+#   theme    — nothing is broken but the screen says everything is  (visual regression)
+# The third is the one an audience does not expect a test suite to catch, which is why it is worth the
+# slot: the dashboard paints itself with whatever `commandcenter/theme.py` returns, so the defect IS the
+# screen going red, not a card reporting that it did.
+DEMO = ("contacts", "orders", "theme")
 ALL = ORDER + ("theme", "pipeline") + BROWSER
 
 
@@ -490,66 +498,81 @@ def github_repo(slug: str) -> str:
 # it names no file, so localization and root cause stay the agents' work. A demo that hands over the
 # filename has skipped the part worth watching.
 REPORTER = {
+    # What the person who hit it would actually write: first person, no jargon, no file names,
+    # no analysis. They describe what they did, what they saw, and what they tried next — which is
+    # all a real reporter has. Working out where the fault is remains the agents' job.
     'contacts': {
-        "label": "Sales can't save customers with a +91 number", "area": 'CRM & deals sync', "impact": 'blocked',
-        "title": 'Sales cannot add customers to the CRM',
-        "details": "The Bengaluru and Mumbai desks cannot add contacts. The form rejects the phone number for anything except a plain ten-digit mobile — +91 98765 43210, (022) 2654 0000 and 080-2345-6789 are all refused, while 98765 43210 saves. It rejects names too: Meera D'Souza and R. Venkataraman both come back as invalid, though Ananya Krishnamurthy is fine. Both desks are blocked.",
+        "label": "Can't save a customer — the form rejects her number and her name", "area": 'CRM & deals sync', "impact": 'blocked',
+        "title": "Can't add a customer — her phone number and her name are both refused",
+        "details": "I'm trying to add a customer I spoke to this morning and the form won't let me save her.\n\nI put in her landline, (022) 2654 0000, and it says the phone number is invalid. I tried her mobile instead, +91 98765 43210, and it says the same thing. If I drop the +91 and just type 98765 43210 it saves — but then we don't have her country code on the record.\n\nIt's refusing her name as well. Meera D'Souza comes back as an invalid name. R. Venkataraman does too — I think it doesn't like the full stop after the R.\n\nI've got about fifteen customers to put in from this morning and most of them I can't. Ananya Krishnamurthy went in without any trouble, so it isn't everybody.",
+    },
+    'theme': {
+        "label": "The dashboard says everything is broken and nothing is", "area": 'Operations & monitoring', "impact": 'degraded',
+        "title": "The whole board has gone red but nothing is actually down",
+        "details": "I opened the Command Center this morning and the entire board is red. The Operational pill at the top, every service dot, all the KPI stripes — the lot.\n\nSo I started an incident call. Nothing is down. I checked the services one by one and they're all answering fine, and there's no incident open anywhere. Monitoring says everything is healthy. It's only this screen saying otherwise.\n\nThe red it's using looks like the same red we use for critical alerts, which is why two people have already escalated a major outage that isn't happening.\n\nIt was fine on Friday. Nobody's reported anything actually being slow or broken.",
     },
     'intake': {
-        "label": "Payments won't save unless you type a comma", "area": 'Billing & revenue', "impact": 'blocked',
-        "title": 'Recording a payment fails when the amount is a round number',
-        "details": "I am entering yesterday's cleared payments and about half of them will not save. If I type the amount as a plain number the page throws an error and nothing is recorded. If I type the same amount with a comma and decimals it saves straight away. It is the same payment either way.",
+        "label": "Payments won't save unless I type a comma in the amount", "area": 'Billing & revenue', "impact": 'blocked',
+        "title": "Payments with a round amount won't save",
+        "details": "I'm entering yesterday's payments and about half of them won't save.\n\nFor invoice INV-2291 I typed 1200 in the amount box and pressed save, and the page just says something went wrong. Nothing gets recorded — I went back and checked and the payment isn't there.\n\nIf I type the same amount as 1,200.00, with the comma and the decimals, it saves straight away. Same invoice, same money. So it seems to depend on how I type the number.\n\nI have about forty to get through and the round ones all fail.",
     },
     'orders': {
-        "label": 'International orders are undercharged', "area": 'Billing & revenue', "impact": 'blocked',
-        "title": 'Orders with a promo code are being undercharged',
-        "details": "Finance reconciled yesterday's settlement against the order ledger. Every international order that used a promo code collected less tax than it should have. Orders without a promo code reconcile exactly, and domestic orders are fine.",
-    },
-    'reports': {
-        "label": 'Daily revenue lands on the wrong day', "area": 'Billing & revenue', "impact": 'affecting',
-        "title": 'The daily revenue report puts orders on the wrong day',
-        "details": 'The daily revenue figures do not agree with the ledger. Orders placed late in the evening are being counted against the following day, so one day is understated and the next overstated by the same amount. It happens every time the report runs.',
-    },
-    'refunds': {
-        "label": 'Refunds are a penny out on multi-line orders', "area": 'Billing & revenue', "impact": 'blocked',
-        "title": 'Refunds do not reconcile on orders with more than one line',
-        "details": 'Finance reconciles refunds per line and is getting breaks on every refund across more than one line. A 100.00 refund on three equal lines pays out 99.99; on other orders it pays out a penny MORE than was refunded. Each one is a manual journal and the reconciliation cannot be signed off.',
+        "label": "Settlement doesn't match our invoices on discounted orders", "area": 'Billing & revenue', "impact": 'blocked',
+        "title": 'The gateway is collecting less than we invoice on discounted orders',
+        "details": "Our settlement report from the payment gateway doesn't agree with what we've invoiced, and I can't close off yesterday until it does.\n\nI went through one order to check. It was ₹10,000, with the 10% festive discount and 20% GST. The invoice we sent the customer says ₹10,800. The gateway only collected ₹10,620. That's ₹180 less than we billed him for.\n\nI checked five more and it's the same on every order where a discount code was used. Orders without a discount match to the rupee.",
     },
     'escalation': {
-        "label": 'Friday tickets all breach over the weekend', "area": 'Support & tickets', "impact": 'affecting',
-        "title": 'Everything raised on a Friday shows as breached on Monday',
-        "details": 'The escalation queue is unusable on Monday mornings — everything raised after Friday afternoon is red, including tickets nobody could have answered. A ticket raised Friday 16:30 and picked up Monday 09:30 shows as 65 hours old against a 4-hour target. The desk works 09:00-17:00 Monday to Friday. The team has started ignoring the colour.',
+        "label": "Monday's queue is full of breach warnings that aren't real", "area": 'Support & tickets', "impact": 'affecting',
+        "title": 'Tickets answered first thing Monday are marked as breached',
+        "details": "Every Monday morning our support queue is full of red 'breached' warnings and most of them aren't real, and I'd like to stop that.\n\nHere's one from this morning. A customer wrote in at 4:30 on Friday afternoon. We picked it up at 9:30 on Monday, half an hour after we opened, and answered him. The system has it marked as breached and says the ticket is 65 hours old.\n\nOur promise to customers is four working hours, and the desk is open nine to five, Monday to Friday. That ticket sat with us for one hour. The whole weekend is being counted as if we were sitting on it.\n\nThe team has more or less stopped looking at the red flags now because so many of them are wrong.",
     },
     'pagination': {
-        "label": "The audit export doesn't match the table", "area": 'Compliance & audit', "impact": 'blocked',
-        "title": 'The audit export is missing rows and repeating others',
-        "details": 'Our auditor rejected the quarterly export. It has 41,318 rows where the table has 41,326, and 8 of the rows it does have appear twice. The missing ones are not random — they are all in batches written within the same second.',
+        "label": "The auditor says our export doesn't match our records", "area": 'Compliance & audit', "impact": 'blocked',
+        "title": "The audit export doesn't match what's in the system",
+        "details": "Our auditor has sent the quarterly audit file back and says it doesn't match our records.\n\nThey counted 41,326 entries in the system. Our export only has 41,318, so eight are missing. They also found eight entries that appear twice in the file.\n\nWe ran the export again and got a slightly different set of missing ones the second time. There's no error message when we run it — it just finishes normally and the file looks fine until you count it.\n\nWe need to send them a clean file this week.",
+    },
+    'refunds': {
+        "label": 'Refund reconciliation is a rupee out on multi-item orders', "area": 'Billing & revenue', "impact": 'blocked',
+        "title": "Refunds don't add up on orders with more than one item",
+        "details": "Finance can't sign off the refund reconciliation because the numbers don't add up.\n\nA customer returned two items from a three-item order and we refunded him ₹10,000. His bank statement shows ₹10,000 went back to him. In our books it's recorded as three amounts of ₹3,333, which comes to ₹9,999. There's a rupee missing.\n\nOn some other orders it goes the other way and our books show a rupee more than we actually refunded, which worries me more.\n\nIt's only ever a rupee or two, but each one has to be written off by hand and we can't close the month with a difference we can't explain.",
+    },
+    'reports': {
+        "label": "Monday's revenue is down and Tuesday's is up by the same amount", "area": 'Billing & revenue', "impact": 'affecting',
+        "title": 'Revenue is landing on the wrong day',
+        "details": "Monday's revenue figure came out about ₹1.2 lakh lower than we expected and Tuesday's was higher by roughly the same amount, so I went through the orders behind them.\n\nThree orders that were placed late on Monday evening, after 11, have been counted on Tuesday. The gateway's own daily statement has all three of them on Monday.\n\nIt seems to happen every time the report runs, always with the late evening orders.",
     },
 }
 
 
 def reporter_text(slug: str) -> str:
-    """What the CLIENT writes: what they were doing, what happened, and how they know it is wrong. Names no
-    file and asks for no particular fix — on that surface, working that out is the agents' job."""
-    inc = INCIDENTS[slug]
-    r = REPORTER.get(slug, {})
-    parts = [p for p in (inc.get("story"), r.get("details")) if p]
-    if inc.get("oracle"):
-        parts.append("How we know this is wrong: " + inc["oracle"])
-    return "\n\n".join(parts)
+    """The ticket as the person who hit it would write it.
+
+    First person, no jargon, no file names, no analysis. They say what they were doing, what they saw, and
+    what they tried next — which is all a real reporter has. Everything else on the ticket used to be
+    written in a narrator's voice ("Priya in Finance is recording yesterday's payments…") with an analyst's
+    conclusion stapled on ("How we know this is wrong: …"), and neither is something a person reporting a
+    problem would ever type.
+
+    The evidence is still there — the gateway's settlement, the customer's bank statement, the auditor's
+    count — but as the reporter mentions it, because those are the things they would naturally say.
+    """
+    r = REPORTER.get(slug)
+    if r:
+        return r["details"]
+    # No reporter version written for this one — fall back to the maintainer's write-up rather than
+    # raising, so an incident can be added to the registry before its reporter voice is.
+    return INCIDENTS[slug]["ticket"]["details"]
 
 
 def report_text(slug: str) -> str:
-    """The ticket body as a reporter would actually write it: what happened, how we know it is wrong, then
-    what is being asked for. Built from the incident's own story/oracle so the two cannot drift apart."""
-    inc = INCIDENTS[slug]
-    parts = []
-    if inc.get("story"):
-        parts.append(inc["story"])
-    if inc.get("oracle"):
-        parts.append("How we know this is wrong: " + inc["oracle"])
-    parts.append(inc["ticket"]["details"])
-    return "\n\n".join(parts)
+    """The ticket body used everywhere. It IS the reporter's own words.
+
+    It deliberately does NOT name the file. It used to, as a kindness to the pipeline, and that made the
+    demo weaker than the system: localizing the fault is the interesting part, and handing it over means
+    nobody watching finds out whether the agents could have done it. The maintainer's framing survives as
+    INCIDENTS[slug]["ticket"]["details"] for anywhere a written-up version is wanted.
+    """
+    return reporter_text(slug)
 
 
 def mirror_repo(slug: str) -> str:
