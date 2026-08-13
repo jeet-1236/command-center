@@ -13,8 +13,15 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/* \
  && pip install --no-cache-dir flask requests
 
-COPY sidecar.py livechecks.py ./
+COPY sidecar.py livechecks.py cc_incidents.py ./
 COPY commandcenter/ ./commandcenter/
 COPY dashboard/ ./dashboard/
+# The support web UI — the surface the two FRONT-END incidents live on. Without it those two defects have
+# nowhere to be seen on the deployed site, and their fix patches (webui/app.js, webui/styles.css) have no
+# file to apply to, so /admin/deploy rejects them and the approval heals nothing.
+COPY webui/ ./webui/
+# The canonical sources: `reset` restores from these, and planting an incident starts from them. Without
+# them a module the agents have already fixed cannot be re-armed and the demo cannot be run twice.
+COPY .canonical/ ./.canonical/
 
 CMD ["python", "sidecar.py"]
