@@ -416,6 +416,17 @@ const TABS=[
   {k:'liveapp',nm:'Live app checks',ic:'⚙',src:'commandcenter/*.py — live'},
   {k:'walk',nm:'Fix one bug',ic:'▶',src:'one incident, start to finish'}
 ];
+
+/* The tabs the SIDEBAR offers. TABS itself stays whole on purpose: Overview's "Domain health" panel is
+   built from it, and those healthy rows are what make this read as a company's real dashboard rather
+   than a test page — remove them and Overview is a mostly-empty screen.
+   Three are navigable, because three are all the demo uses:
+     overview — where the `theme` defect shows, since its symptom IS the board's colour
+     liveapp  — where you trigger `contacts` / `orders` by hand and watch them fail
+     walk     — plant every bug, the three cards, and the drill-in
+   To put one back, add its key here; nothing else needs to change. */
+const NAV_KEYS = ['overview', 'liveapp', 'walk'];
+const NAV_TABS = TABS.filter(t => NAV_KEYS.includes(t.k));
 let active='overview';
 
 function skeleton(k){
@@ -1133,7 +1144,9 @@ function activeIncidents(){return FAULTS.filter(f=>FLAGS[f]).concat(CHECKS.filte
 
 /* ── top chrome ── */
 function renderNav(){
-  $('nav').innerHTML=`<div class="navlab">Operations</div>`+TABS.map(t=>`<div class="navitem ${t.k===active?'on':''}" onclick="go('${t.k}')"><span class="ic">${t.ic}</span><span class="nm">${t.nm}</span><span class="dot" id="nd-${t.k}" style="display:${t.k==='overview'?'none':''}"></span></div>`).join('');
+  // NAV_TABS, not TABS — the sidebar offers only the three the demo uses (see NAV_KEYS).
+  if(!NAV_KEYS.includes(active)) active='overview';   // a stale hash must not land on a hidden tab
+  $('nav').innerHTML=`<div class="navlab">Operations</div>`+NAV_TABS.map(t=>`<div class="navitem ${t.k===active?'on':''}" onclick="go('${t.k}')"><span class="ic">${t.ic}</span><span class="nm">${t.nm}</span><span class="dot" id="nd-${t.k}" style="display:${t.k==='overview'?'none':''}"></span></div>`).join('');
 }
 function updateChrome(){
   const F=FLAGS,h=domHealth(F),gs=worst(h),any=activeIncidents().length;
@@ -1158,7 +1171,9 @@ function updateChrome(){
 
 /* ── loop ── */
 const UP={overview:ov_up,system:sys_up,revenue:rev_up,support:sup_up,cloud:cloud_up,security:sec_up,liveapp:live_up,walk:walk_up};
-function go(k){if(!UP[k])k='overview';active=k;try{history.replaceState(null,'','#'+k);}catch(e){}renderNav();$('view').innerHTML=skeleton(k);UP[k]();updateChrome();}
+// Gate on NAV_KEYS as well as UP: the hidden tabs still HAVE update functions, so validating on UP alone
+// would let a stale `#revenue` in the address bar render a tab the sidebar no longer offers.
+function go(k){if(!NAV_KEYS.includes(k)||!UP[k])k='overview';active=k;try{history.replaceState(null,'','#'+k);}catch(e){}renderNav();$('view').innerHTML=skeleton(k);UP[k]();updateChrome();}
 function diffFlags(F){
   if(lastFlags){FAULTS.forEach(f=>{
     if(F[f]&&!lastFlags[f]){const i=INC[f];pushFeed('raise',i.dom,i.raise);}
@@ -1190,10 +1205,10 @@ function clock(){$('clock').textContent=new Date().toLocaleTimeString([],{hour12
 window.addEventListener('resize',()=>{try{UP[active]();}catch(e){}});
 // boot
 FLAGS=Object.fromEntries(FAULTS.map(f=>[f,false]));lastFlags={...FLAGS};
-try{const h0=(location.hash||'').slice(1);if(UP[h0])active=h0;}catch(e){}
+try{const h0=(location.hash||'').slice(1);if(NAV_KEYS.includes(h0)&&UP[h0])active=h0;}catch(e){}
 for(let i=0;i<8;i++)advance(FLAGS); // warm the series
 renderNav();$('view').innerHTML=skeleton(active);UP[active]();updateChrome();clock();
-try{window.addEventListener('hashchange',()=>{const k=location.hash.slice(1);if(UP[k])go(k);});}catch(e){}
+try{window.addEventListener('hashchange',()=>{const k=location.hash.slice(1);if(NAV_KEYS.includes(k)&&UP[k])go(k);});}catch(e){}
 setInterval(clock,1000);
 setInterval(tick,2000);tick();
 </script>
