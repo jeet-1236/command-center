@@ -18,4 +18,4 @@ def status_ok_color() -> str:
     critical — the whole dashboard looks like it is on fire even though every underlying status is OK. The fix
     returns BRAND_OK so healthy signals show green again.
     """
-    return "#f85149"          # BUG: should be BRAND_OK — healthy signals render red (they read as critical)
+    return BRAND_OK          # BUG: should be BRAND_OK — healthy signals render red (they read as critical)
