@@ -312,7 +312,8 @@ function domHealth(F){
     security:F.crm_credential_expired?'crit':'ok',
     // The live app checks are not derived from a flag — they are whatever commandcenter/*.py actually did
     // on the last poll. A failing one is a real defect running in production right now.
-    liveapp: CHECKS.length&&checksFailing?'crit':'ok'
+    liveapp: CHECKS.length&&checksFailing?'crit':'ok',
+    walk: ''
   };
 }
 const worst=h=>['crit','warn','ok'].find(l=>Object.values(h).includes(l))||'ok';
@@ -408,7 +409,8 @@ const TABS=[
   {k:'support',nm:'Support',ic:'✉',src:'Freshdesk'},
   {k:'cloud',nm:'Cloud Spend',ic:'☁',src:'FinOps'},
   {k:'security',nm:'Access & Security',ic:'⚿',src:'IAM'},
-  {k:'liveapp',nm:'Live app checks',ic:'⚙',src:'commandcenter/*.py — live'}
+  {k:'liveapp',nm:'Live app checks',ic:'⚙',src:'commandcenter/*.py — live'},
+  {k:'walk',nm:'Fix one bug',ic:'▶',src:'one incident, start to finish'}
 ];
 let active='overview';
 
@@ -421,6 +423,7 @@ function skeleton(k){
   if(k==='cloud')    return cloud_sk();
   if(k==='security') return sec_sk();
   if(k==='liveapp')  return live_sk();
+  if(k==='walk')     return walk_sk();
 }
 
 /* Overview */
@@ -661,13 +664,14 @@ function live_sk(){
     <div class="card"><div class="hd"><h3>New CRM contact</h3><span class="muted">POST /api/contacts</span></div>
       <p class="muted" style="margin:0 0 10px;font-size:12px">Saved through the app's own validation rule (commandcenter/contacts.py).</p>
       <div class="form">
-        <input class="inp" id="lv-name" value="Siobhán O'Brien" placeholder="Full name" autocomplete="off">
-        <input class="inp" id="lv-phone" value="+44 20 7946 0958" placeholder="Phone" autocomplete="off">
+        <input class="inp" id="lv-name" value="Meera D'Souza" placeholder="Full name" autocomplete="off">
+        <input class="inp" id="lv-phone" value="+91 80 2345 6789" placeholder="Phone" autocomplete="off">
       </div>
       <div class="form">
         <button class="btn" onclick="lvContact()">Save contact</button>
-        <button class="btn ghost" onclick="lvFill('us')">US example</button>
-        <button class="btn ghost" onclick="lvFill('intl')">International example</button>
+        <button class="btn ghost" onclick="lvFill('plain')">Plain mobile</button>
+        <button class="btn ghost" onclick="lvFill('landline')">Landline · STD code</button>
+        <button class="btn ghost" onclick="lvFill('initial')">Name with an initial</button>
       </div>
       <div class="resp idle" id="lv-contact-out">Not submitted yet.</div></div>
     <div class="card"><div class="hd"><h3>Add note to ticket</h3><span class="muted">POST /api/notes</span></div>
@@ -680,14 +684,28 @@ function live_sk(){
       <div class="resp idle" id="lv-note-out">Not submitted yet.</div></div>
   </div>`;
 }
+/* ONE AT A TIME. The demo runs an incident at a time — plant it, show it failing, file the ticket, watch
+   it resolve, show it green — and that story only holds if there is nothing else red on screen. So this
+   board shows the FAILING check and nothing else, with the rest summarised in a line. `lvAll` opens the
+   full nine when somebody asks to see them. */
+let lvAll=false;
+function lvToggleAll(){ lvAll=!lvAll; live_up(); }
+
 function live_up(){
   const n=CHECKS.length, bad=checksFailing;
   const bn=$('lv-banner');
+  const shown = (lvAll||!bad) ? CHECKS : CHECKS.filter(c=>!c.ok);
+  const link = `<button class="btn ghost" style="margin-top:10px" onclick="lvToggleAll()">`
+             + (lvAll ? `Show only what is failing` : `Show all ${n} checks`) + `</button>`;
   if(!n){bn.innerHTML=banner('warn','Live checks unavailable','The sidecar did not answer GET /api/checks.');}
-  else if(bad){bn.innerHTML=banner('crit',bad+' of '+n+' live checks failing',
-    'These run the application\'s own code on every poll. They turn green when a correct version of that code is on disk — which is what deploying the approved fix does.');}
-  else{bn.innerHTML=banner('ok','All '+n+' live checks passing','Every incident case now returns what the module\'s contract says it should.');}
-  $('lv-cards').innerHTML=CHECKS.map(c=>`<div class="card chk ${c.ok?'':'bad'} ${stageOf(c)}">
+  else if(bad){bn.innerHTML=banner('crit', bad===1 ? 'One live check is failing' : bad+' of '+n+' live checks failing',
+    (bad===1 ? 'This one runs the application\'s own code on every poll and is red because that code is genuinely wrong. '
+             : 'These run the application\'s own code on every poll. ')
+    + 'It turns green when a correct version is on disk — which is what deploying the approved fix does. '
+    + `The other ${n-bad} are passing.` + link);}
+  else{bn.innerHTML=banner('ok','All '+n+' live checks passing',
+    'Every incident case returns what the module\'s contract says it should. Nothing is planted.');}
+  $('lv-cards').innerHTML=shown.map(c=>`<div class="card chk ${c.ok?'':'bad'} ${stageOf(c)}">
     <div class="hd"><span class="cat">${c.category}</span>${statPill(c.ok?'ok':'crit',c.ok?'PASS':'FAIL')}</div>
     <div class="ttl">${c.title}</div>
     <div class="what">${c.what}</div>
@@ -716,8 +734,12 @@ function stageRow(c){
 }
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function lvFill(kind){
-  if(kind==='us'){$('lv-name').value='Dana White';$('lv-phone').value='555-018-2231';}
-  else{$('lv-name').value="Siobhán O'Brien";$('lv-phone').value='+44 20 7946 0958';}
+  // The three shapes the desk actually types. 'plain' is the one the broken rule still accepts, which is
+  // what makes it a control: if even that is rejected, the defect is worse than reported.
+  const P={plain:    ["Ananya Krishnamurthy", "98765 43210"],
+           landline: ["Meera D'Souza",        "(022) 2654 0000"],
+           initial:  ["R. Venkataraman",      "080-2345-6789"]};
+  const v=P[kind]||P.plain; $('lv-name').value=v[0]; $('lv-phone').value=v[1];
 }
 async function lvContact(){
   const out=$('lv-contact-out');out.className='resp idle';out.textContent='Saving…';
@@ -757,6 +779,203 @@ async function pollChecks(){
     if(!was&&c.ok)pushFeed('resolve','Live app · '+c.surface,'Fix deployed by AgentForge — '+c.module+' now returns '+c.actual);
   });}
   lastChecks=Object.fromEntries(CHECKS.map(c=>[c.key,c.ok]));
+}
+
+/* ── "Fix one bug": plant one, watch it get fixed ──────────────────────────────────────────────────────
+   The Live app checks tab shows everything at once, which is the right view for "is anything broken" and the
+   wrong one for showing somebody what happens to ONE of them. This tab is the demo itself, driven from the
+   page: pick an incident, plant it, report it, approve the fix. Five beats, in the order an audience needs
+   them: the app is wrong → somebody reported it → AgentForge is working → a human approved → the app is
+   right.
+
+   Every button does the same thing the CLI driver does — plant EDITS the served module, report raises a real
+   ticket, approve answers a real gate that refuses a bare yes. The highlighted beat comes from the
+   platform's own ticket queue, so it shows where the work actually is rather than where a script says it
+   should be. Nothing here fakes a step, which is the only reason the last beat is worth watching. */
+const BEATS=[
+  {k:'broken',   t:'The app is wrong',        d:'The check below runs the real code and reports what it returned.'},
+  {k:'reported', t:'Somebody reported it',    d:'A ticket in the reporter\'s own words — no file names handed over.'},
+  {k:'working',  t:'AgentForge is on it',     d:'Reproduce → root-cause → fix → regression test → review → run the suite.'},
+  {k:'review',   t:'A human decides',         d:'A real pull request, and a gate that will not take a bare approval.'},
+  {k:'fixed',    t:'The app is right',        d:'The reviewed patch is deployed and the check turns green on its own.'},
+];
+const STAGE_BEAT={unreported:'broken',reported:'reported',working:'working',review:'review',
+                  resolved:'fixed',escalated:'review'};
+let walkKey=null, INCIDENTS=[], walkBusy='', walkMsg=null, walkLoad='idle';
+
+function walk_sk(){
+  return `<div id="wk-banner"></div>
+  <div class="card" style="margin-bottom:14px">
+    <div class="hd"><h3>Pick an incident</h3><span class="muted" id="wk-count"></span></div>
+    <div class="form" id="wk-picker"></div>
+  </div>
+  <div id="wk-body"></div>`;
+}
+
+let walkFocus=false;          // true once a bug is chosen: show that one and nothing else
+function walkPick(k){ walkKey=k; walkMsg=null; walkFocus=true; walk_up(); }
+function walkBack(){ walkFocus=false; walkMsg=null; walk_up(); }
+
+async function pollIncidents(){
+  try{
+    const r=await fetch('/api/incidents',{cache:'no-store'});
+    INCIDENTS=(await r.json()).incidents||[];
+    walkLoad=INCIDENTS.length?'ok':'empty';
+  }catch(e){walkLoad='fail';/* keep the last answer — a dropped poll is not a change of state */}
+}
+
+/* Plant / report / approve / reset. Each disables its row while in flight, because every one of them takes
+   a second or two against real services and a double-click on stage would file a duplicate. */
+/* "Only this bug" — clear every OTHER incident and plant this one, so the served app carries exactly one
+   defect and the board shows exactly one red card. Without it a demo that has run a few times has three or
+   four things armed at once, and the room cannot tell which red card belongs to the ticket on screen. */
+async function walkOnly(slug){
+  walkBusy=slug+':only'; walkMsg=null; walk_up();
+  const others=INCIDENTS.filter(i=>i.slug!==slug&&i.armed);
+  try{
+    for(const o of others){
+      await fetch(`/api/incident/${o.slug}/clear`,{method:'POST',headers:{'content-type':'application/json'},body:'{}'});
+    }
+    const r=await fetch(`/api/incident/${slug}/plant`,{method:'POST',headers:{'content-type':'application/json'},body:'{}'});
+    const d=await r.json();
+    walkMsg = d.ok
+      ? {text:`Only ${slug} is broken now — ${others.length} other incident${others.length===1?'':'s'} cleared. `
+             +`The board below shows one red card, and it is this one.`}
+      : {bad:true,text:d.error||'could not plant it'};
+  }catch(e){ walkMsg={bad:true,text:'request failed: '+e}; }
+  walkBusy='';
+  await Promise.all([pollIncidents(),pollChecks()]);
+  walk_up();
+}
+
+async function walkDo(slug,what){
+  walkBusy=slug+':'+what; walkMsg=null; walk_up();
+  try{
+    const r=await fetch(`/api/incident/${slug}/${what}`,{method:'POST',headers:{'content-type':'application/json'},body:'{}'});
+    const d=await r.json();
+    if(!d.ok){ walkMsg={bad:true,text:d.error||('request failed with HTTP '+r.status)}; }
+    else if(what==='plant'){
+      const also=(d.cleared||[]).length;
+      walkMsg={text:'Planted — the defect is in the served app now, and the check below goes red on the next poll.'
+                   +(also?` ${also} other incident${also===1?'':'s'} cleared, so this is the only thing broken.`
+                         :' It is the only thing broken.')};
+    }
+    else if(what==='clear')   walkMsg={text:'Cleared — the module is back to its correct source.'};
+    else if(what==='file')    walkMsg={text:d.already?('Already in flight as ticket '+d.id+' — following that one rather than filing a duplicate.')
+                                                    :('Reported as ticket '+d.id+'. AgentForge picks it up from here.')};
+    else if(what==='approve') walkMsg={text:'Approved. The reviewed patch deploys to the served app — the check turns green on its own.'};
+  }catch(e){ walkMsg={bad:true,text:'request failed: '+e}; }
+  walkBusy='';
+  await Promise.all([pollIncidents(),pollChecks()]);
+  walk_up();
+}
+
+function walk_up(){
+  const picker=$('wk-picker'); if(!picker) return;
+  if(!INCIDENTS.length){
+    if(walkLoad==='idle'){ walkLoad='loading'; pollIncidents().then(walk_up); }
+    $('wk-banner').innerHTML = walkLoad==='loading'
+      ? `<div class="muted" style="padding:10px 2px">Loading incidents…</div>`
+      : banner('warn','Incident list unavailable',
+          'The sidecar did not answer GET /api/incidents with anything. A deployed copy has no '
+          +'scripts/cc_incidents.py, so the bugs can only be planted where that registry lives.');
+    return;
+  }
+  if(!walkKey || !INCIDENTS.some(i=>i.slug===walkKey)){
+    const firstArmed=INCIDENTS.find(i=>i.armed); walkKey=(firstArmed||INCIDENTS[0]).slug;
+  }
+  const planted=INCIDENTS.filter(i=>i.armed).length;
+  if(walkFocus){
+    // One bug on screen. The others are not dimmed or scrolled past — they are gone, so there is nothing
+    // on the board to mistake for the one being discussed.
+    picker.innerHTML=`<button class="btn ghost" onclick="walkBack()">← All incidents</button>`;
+    $('wk-count').textContent=`showing ${walkKey} only`;
+  }else{
+    picker.innerHTML=INCIDENTS.map(i=>
+      `<button class="btn ${i.armed?'':'ghost'}" onclick="walkPick('${i.slug}')">
+         ${i.armed?'✕':'✓'} ${i.slug}</button>`).join('');
+    $('wk-count').textContent=`${planted} of ${INCIDENTS.length} planted · pick one`;
+  }
+
+  const inc=INCIDENTS.find(x=>x.slug===walkKey);
+  const c=CHECKS.find(x=>x.key===walkKey)||null;          // the browser incidents have no polled card
+  const tRaw=inc.ticket||{};
+  // A ticket that has FINISHED belongs to the previous cycle. If the incident is planted again afterwards,
+  // that old ticket must not be treated as the current one — otherwise the beats claim "the app is right"
+  // above a bug that is demonstrably back, and every button is disabled because something is "already
+  // reported". Same rule the live cards use.
+  const done=tRaw.stage==='resolved'||tRaw.stage==='escalated';
+  const t=(done&&inc.armed)?{}:tRaw;
+  const open=!!t.id&&!done;
+  const stage=t.stage||(inc.armed?'unreported':'resolved');
+  const at=STAGE_BEAT[stage]||'broken';
+  const atIdx=BEATS.findIndex(b=>b.k===at);
+  const busy=k=>walkBusy===walkKey+':'+k;
+  const anyBusy=walkBusy.startsWith(walkKey+':');
+
+  $('wk-banner').innerHTML = inc.armed
+    ? banner('crit',`${inc.slug} — ${inc.category}`, inc.title)
+    : banner('ok',`${inc.slug} — nothing wrong with this one right now`,
+             'Plant it below and the failure is real: the defect goes into the served source, not into a flag.');
+
+  /* What each button can do RIGHT NOW. Showing all four always would invite the two clicks that make the
+     demo look broken — reporting a bug that is not planted, and approving a gate that does not exist. */
+  const btn=(k,label,on)=>`<button class="btn ${on?'':'ghost'}" ${on&&!anyBusy?'':'disabled'}
+      onclick="walkDo('${inc.slug}','${k}')">${busy(k)?'…':''}${label}</button>`;
+  const canFile=inc.armed&&!open;
+  const canApprove=(t.stage==='review');
+  const actions=`
+    <div class="form" style="gap:8px;flex-wrap:wrap">
+      ${btn('plant','1 · Plant this bug',!inc.armed)}
+      ${btn('file','2 · Report it',canFile)}
+      ${btn('approve','3 · Approve the fix',canApprove)}
+      ${btn('clear','Reset',inc.armed&&!open)}
+    </div>
+    ${walkMsg?`<div class="resp ${walkMsg.bad?'bad':'ok'}" style="margin-top:10px">${esc(walkMsg.text)}</div>`:''}
+    <div class="muted" style="margin-top:10px;font-size:12px">
+      ${open?'Reported — reset is disabled while the ticket is open, so the run keeps the state it started from.'
+             :'Plant → Report → AgentForge works → Approve. Steps light up as each one becomes possible.'}
+    </div>`;
+
+  const evidence = c
+    ? `<div class="card chk ${c.ok?'':'bad'}">
+        <div class="hd"><span class="cat">${c.category}</span>${statPill(c.ok?'ok':'crit',c.ok?'PASS':'FAIL')}</div>
+        <div class="ttl">${c.title}</div><div class="what">${c.what}</div>
+        <div class="kv">
+          <span class="k">Input</span><span class="v">${esc(c.input)}</span>
+          <span class="k">Expected</span><span class="v want">${esc(c.expected)}</span>
+          <span class="k">Actual</span><span class="v ${c.ok?'got-ok':'got-bad'}">${esc(c.actual)}</span>
+        </div>
+        <div class="src"><span class="mono">${c.module}</span><span>${c.surface}</span></div>
+      </div>`
+    : `<div class="card chk ${inc.armed?'bad':''}">
+        <div class="hd"><span class="cat">${inc.category}</span>${statPill(inc.armed?'crit':'ok',inc.armed?'PLANTED':'CLEAR')}</div>
+        <div class="ttl">${esc(inc.title)}</div>
+        <div class="what">A front-end defect — it is checked by driving a real browser, which is far too slow
+          for a two-second poll, so this one has no live card. Open the support web UI to see it, and the
+          browser suite in the pull request is what proves it fixed.</div>
+        <div class="src"><span class="mono">${inc.module}</span><span>${inc.surface}</span></div>
+      </div>`;
+
+  $('wk-body').innerHTML=`
+    <div class="grid g2" style="margin-bottom:14px">
+      ${evidence}
+      <div class="card">
+        <div class="hd"><h3>Where this one is</h3><span class="muted">${esc(t.stage_label||'Not reported yet')}</span></div>
+        <div id="wk-beats"></div>
+      </div>
+    </div>
+    <div class="card"><div class="hd"><h3>Drive it</h3><span class="muted">${esc(inc.module)}</span></div>${actions}</div>`;
+
+  $('wk-beats').innerHTML=BEATS.map((b,i)=>{
+    const done=i<atIdx, here=i===atIdx;
+    const mark=done?'✓':here?(b.k==='working'?'<span class="dots"><i></i><i></i><i></i></span>':'●'):'○';
+    return `<div class="row" style="align-items:center">
+      <div class="ic ${done?'ok':here?'acc':''}" style="opacity:${done||here?1:.4}">${mark}</div>
+      <div class="tx" style="opacity:${done||here?1:.5}">
+        <b>${b.t}</b><p>${b.d}</p></div></div>`;
+  }).join('') + (t.pr_url
+      ? `<div style="margin-top:10px"><a class="btn" href="${esc(t.pr_url)}" target="_blank" rel="noopener">Open the pull request ↗</a></div>` : '');
 }
 
 /* ── feed rendering ── */
@@ -799,7 +1018,7 @@ function updateChrome(){
 }
 
 /* ── loop ── */
-const UP={overview:ov_up,system:sys_up,revenue:rev_up,support:sup_up,cloud:cloud_up,security:sec_up,liveapp:live_up};
+const UP={overview:ov_up,system:sys_up,revenue:rev_up,support:sup_up,cloud:cloud_up,security:sec_up,liveapp:live_up,walk:walk_up};
 function go(k){if(!UP[k])k='overview';active=k;try{history.replaceState(null,'','#'+k);}catch(e){}renderNav();$('view').innerHTML=skeleton(k);UP[k]();updateChrome();}
 function diffFlags(F){
   if(lastFlags){FAULTS.forEach(f=>{
@@ -812,6 +1031,7 @@ async function tick(){
   try{const r=await fetch('/state',{cache:'no-store'});FLAGS=await r.json();connected=true;}
   catch(e){connected=false;/* keep last flags */}
   await pollChecks();          // runs commandcenter/*.py — the only panel that is not a flag
+  if(active==='walk')await pollIncidents();   // only this tab needs it: source state + the ticket queue
   // The HEALTHY colour is painted with whatever commandcenter/theme.py::status_ok_color() actually returns
   // (the sidecar reports it on /api/checks). While that function returns the danger red, every "healthy"
   // signal on this dashboard — the Operational pill, the green service dots, the ok KPI stripes — renders red
