@@ -4,10 +4,14 @@ A sales rep adds a contact from the Command Center's "New CRM contact" form. Eve
 name we can address them by and a phone number we can dial, and the same rule runs twice: once in the
 browser to give the rep immediate feedback, and once here before the record reaches the CRM.
 
-The book of record is international. Names are free text and routinely carry an apostrophe, a hyphen or an
-accent (O'Brien, Anne-Marie, José). Phone numbers arrive however the rep typed them — E.164 with a country
-code and spaces (+44 20 7946 0958), the domestic dashed form (555-018-2231), or with an area code in
-parentheses ((212) 555-0147).
+The book of record is Indian, and increasingly international. Names are free text: most carry no
+punctuation (Ananya Krishnamurthy), but plenty do — an initial with a full stop is how a South Indian name
+is ordinarily written (R. Venkataraman), and apostrophes, hyphens and accents all occur (D'Souza,
+Anne-Marie, José).
+
+Phone numbers arrive however the rep typed them. The shapes the desk actually sees are the mobile with a
+country code (+91 98765 43210), the same number without it (98765 43210), a landline with an STD code in
+parentheses ((022) 2654 0000), and the hyphenated form (080-2345-6789).
 """
 from __future__ import annotations
 
@@ -21,13 +25,14 @@ PHONE_SEPARATORS = " ()-."
 
 
 def _name_ok(name: str) -> bool:
-    """A name is 2–60 characters of letters plus ordinary name punctuation (space, apostrophe, hyphen).
+    """A name is 2–60 characters of letters plus ordinary name punctuation (space, apostrophe, hyphen, dot).
 
-    Accented and non-Latin letters ARE letters. A digit is never part of a person's name.
+    The full stop matters: "R. Venkataraman" is how the name is written, not a typo. Accented and
+    non-Latin letters ARE letters. A digit is never part of a person's name.
     """
     if not 2 <= len(name) <= 60:
         return False
-    return all(("a" <= c.lower() <= "z") or c == " " for c in name)
+    return all(c.isalpha() or c in " '-." for c in name)
 
 
 def _phone_ok(phone: str) -> bool:
@@ -35,8 +40,10 @@ def _phone_ok(phone: str) -> bool:
 
     7–15 is the E.164 range: a national number is never shorter, and no country's number is longer.
     """
-    parts = phone.split("-")
-    return [len(p) for p in parts] == [3, 3, 4] and all(p.isdigit() for p in parts)
+    body = phone[1:] if phone.startswith("+") else phone
+    if any(not (c.isdigit() or c in PHONE_SEPARATORS) for c in body):
+        return False
+    return 7 <= sum(1 for c in body if c.isdigit()) <= 15
 
 
 def validate_contact(contact: dict) -> list:
