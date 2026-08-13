@@ -26,10 +26,10 @@ def handle_note(payload: dict) -> tuple:
     This handler must never raise: whatever a client sends, it answers with one of those two.
     """
     ticket = payload.get("ticket_id")
-    notes = payload.get("notes", "")
-    text = notes.strip()
     if not ticket:
         return 400, {"error": "ticket_id is required"}
+    notes = payload.get("notes", "")
+    text = (notes or "").strip()
     if len(text) > MAX_NOTE:
         return 400, {"error": f"notes must be at most {MAX_NOTE} characters"}
     return 201, {"ticket_id": ticket, "notes": text}
