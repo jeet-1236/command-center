@@ -332,6 +332,18 @@ def api_contacts():
     return jsonify(livechecks.try_contact(str(body.get("name", "")), str(body.get("phone", ""))))
 
 
+@app.post("/api/payments")
+def api_payments():
+    """The "Record a payment" form posts here. Returns whatever the handler answered — including the 500
+    it is currently answering with, which is the whole point of the incident."""
+    body = request.get_json(silent=True) or {}
+    payload = {"invoice_id": body.get("invoice_id")}
+    if "amount" in body:
+        payload["amount"] = body["amount"]      # may be a NUMBER — that IS the reported case
+    res = livechecks.try_payment(payload)
+    return jsonify(res), res["status"]
+
+
 @app.post("/api/notes")
 def api_notes():
     """The "Add note to ticket" form posts here. Returns whatever the handler answered — including the 500
