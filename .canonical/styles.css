@@ -1,0 +1,98 @@
+/* commandcenter/webui/styles.css — the Support surface's note panel and confirmation dialog.
+ *
+ * The desk is used on a phone as often as on a laptop, so the dialog has to stay inside a small viewport
+ * with its actions reachable. That is a layout contract, and it is checked by measuring the real element in
+ * a real 390px viewport (tests/test_ui_layout.py) — reading the CSS cannot tell you whether a button ended
+ * up off-screen.
+ */
+
+:root {
+  --bg: #0d1117;
+  --panel: #161b22;
+  --line: #283242;
+  --text: #e6edf3;
+  --muted: #9aa7b8;
+  --accent: #3b82f6;
+  --ok: #3fb950;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  padding: 20px;
+}
+
+h1 { font-size: 18px; margin: 0 0 4px; }
+.sub { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 16px;
+  max-width: 640px;
+}
+
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+input[type="text"] {
+  flex: 1 1 220px;
+  min-width: 0;
+  background: #0d1117;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--text);
+  padding: 9px 11px;
+  font: inherit;
+}
+
+button {
+  background: var(--accent);
+  color: #fff;
+  border: 0;
+  border-radius: 7px;
+  padding: 9px 15px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+button:disabled { opacity: .6; cursor: default; }
+button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+
+#submit-status { margin: 12px 0 0; font-size: 13px; color: var(--muted); }
+#submit-status[data-saved="yes"] { color: var(--ok); }
+
+ul#note-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.note {
+  display: flex; justify-content: space-between; gap: 10px;
+  background: #0d1117; border: 1px solid var(--line); border-radius: 7px; padding: 8px 11px; font-size: 13.5px;
+}
+.note-when { color: var(--muted); font-size: 12px; white-space: nowrap; }
+
+/* ── confirmation dialog ───────────────────────────────────────────────────────────────────────────────
+   The dialog must fit the viewport it is opened in. `width` alone does not do that on a phone: a fixed
+   width wider than the screen simply overflows, and the actions row goes with it. */
+.modal-scrim {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, .6);
+  padding: 16px;
+  align-items: center; justify-content: center;
+}
+.modal-scrim.open { display: flex; }
+
+.modal {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 20px;
+  width: 520px;
+  max-width: 100%;
+}
+.modal h2 { margin: 0 0 6px; font-size: 16px; }
+.modal p { margin: 0 0 16px; color: var(--muted); font-size: 13.5px; }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
