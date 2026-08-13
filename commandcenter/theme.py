@@ -12,10 +12,6 @@ BRAND_OK = "#3fb950"          # the HEALTHY / "all good" green (the dashboard --
 
 def status_ok_color() -> str:
     """The colour of every HEALTHY status signal — the "Operational" pill, the green service-health dots and the
-    ok-state KPI stripes. It must be the brand green so a healthy system reads as calm/green.
-
-    KNOWN-ISSUE (cc-code-5): returns the danger RED instead of the healthy green, so every healthy signal reads as
-    critical — the whole dashboard looks like it is on fire even though every underlying status is OK. The fix
-    returns BRAND_OK so healthy signals show green again.
+    ok-state KPI stripes. It must be the brand green so a healthy system reads as calm rather than alarming.
     """
-    return BRAND_OK          # BUG: should be BRAND_OK — healthy signals render red (they read as critical)
+    return BRAND_OK
