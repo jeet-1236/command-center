@@ -332,6 +332,30 @@ def api_contacts():
     return jsonify(livechecks.try_contact(str(body.get("name", "")), str(body.get("phone", ""))))
 
 
+@app.post("/api/order-total")
+def api_order_total():
+    """"Work out this order's total" — the Revenue surface's own calculation, on demand."""
+    b = request.get_json(silent=True) or {}
+    return jsonify(livechecks.try_order(float(b.get("subtotal", 10000)),
+                                        float(b.get("discount_pct", 10)),
+                                        float(b.get("tax_pct", 20))))
+
+
+@app.post("/api/sla-check")
+def api_sla_check():
+    """"Is this ticket late?" — the escalation queue's own clock, on demand."""
+    b = request.get_json(silent=True) or {}
+    return jsonify(livechecks.try_sla(str(b.get("raised", "")), str(b.get("answered", "")),
+                                      int(b.get("sla_minutes", 240))))
+
+
+@app.post("/api/audit-export")
+def api_audit_export():
+    """"Send the auditor the export" — paged exactly the way the real job pages it."""
+    b = request.get_json(silent=True) or {}
+    return jsonify(livechecks.try_export(int(b.get("page_size", 3))))
+
+
 @app.post("/api/payments")
 def api_payments():
     """The "Record a payment" form posts here. Returns whatever the handler answered — including the 500
