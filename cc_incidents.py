@@ -460,6 +460,13 @@ BROWSER = ("uistate", "uilayout")
 # browser incidents are gated by a real browser instead, which takes seconds, and are shown on the page
 # itself rather than as a polled card. Naming the set beats each consumer guessing at it.
 LIVE_CHECKED = ORDER + ("theme", "pipeline")
+
+# The set the Command Center actually SHOWS. Everything in LIVE_CHECKED works; this is a narrower choice
+# about what a demo has time to tell properly. Each of these five has a person behind it doing something
+# recognisable — entering a customer, recording a payment, checking a total, chasing an SLA, sending an
+# export to an auditor — and a surface on the board where you can do that thing yourself and watch it go
+# wrong. The others stay in the registry, keep their repos, and can be put back by adding them here.
+DEMO = ("contacts", "intake", "orders", "escalation", "pagination")
 ALL = ORDER + ("theme", "pipeline") + BROWSER
 
 
@@ -489,9 +496,9 @@ REPORTER = {
         "details": "The Bengaluru and Mumbai desks cannot add contacts. The form rejects the phone number for anything except a plain ten-digit mobile — +91 98765 43210, (022) 2654 0000 and 080-2345-6789 are all refused, while 98765 43210 saves. It rejects names too: Meera D'Souza and R. Venkataraman both come back as invalid, though Ananya Krishnamurthy is fine. Both desks are blocked.",
     },
     'intake': {
-        "label": 'Adding a note to a ticket returns an error', "area": 'Support & tickets', "impact": 'blocked',
-        "title": 'Adding a note to a ticket fails with a server error',
-        "details": 'Whenever an agent saves a note with the note box left empty the request fails with a server error, and it pages the on-call every time. Typing a space and saving works, which is what the desk has started doing.',
+        "label": "Payments won't save unless you type a comma", "area": 'Billing & revenue', "impact": 'blocked',
+        "title": 'Recording a payment fails when the amount is a round number',
+        "details": "I am entering yesterday's cleared payments and about half of them will not save. If I type the amount as a plain number the page throws an error and nothing is recorded. If I type the same amount with a comma and decimals it saves straight away. It is the same payment either way.",
     },
     'orders': {
         "label": 'International orders are undercharged', "area": 'Billing & revenue', "impact": 'blocked',
