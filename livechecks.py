@@ -439,7 +439,11 @@ def incident_list() -> list:
         return []
     tickets = _refresh_tickets() or {}
     out = []
-    for slug in reg.ALL:
+    # Only what this board can actually SHOW and DRIVE. The two front-end incidents are gated by a real
+    # browser, which no deployment of this app has — so they have no live card, their state cannot be
+    # verified here, and offering them as buttons means offering a bug that cannot be seen to fail or seen
+    # to heal. reg.LIVE_CHECKED is exactly the set with a check behind it.
+    for slug in reg.LIVE_CHECKED:
         inc = reg.INCIDENTS[slug]
         try:
             armed = reg.is_armed(slug)
