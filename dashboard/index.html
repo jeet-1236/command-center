@@ -924,17 +924,19 @@ function walk_up(){
       onclick="walkDo('${inc.slug}','${k}')">${busy(k)?'…':''}${label}</button>`;
   const canFile=inc.armed&&!open;
   const canApprove=(t.stage==='review');
+  /* Plant and Reset only. The ticket is raised in Freshdesk or the AgentForge console and approved at the
+     gate there — this board's job is to show the defect and then show it gone, and a second place to file
+     or approve is a second place for the two to disagree about what happened. */
   const actions=`
     <div class="form" style="gap:8px;flex-wrap:wrap">
-      ${btn('plant','1 · Plant this bug',!inc.armed)}
-      ${btn('file','2 · Report it',canFile)}
-      ${btn('approve','3 · Approve the fix',canApprove)}
+      ${btn('plant','Plant this bug',!inc.armed)}
       ${btn('clear','Reset',inc.armed&&!open)}
     </div>
     ${walkMsg?`<div class="resp ${walkMsg.bad?'bad':'ok'}" style="margin-top:10px">${esc(walkMsg.text)}</div>`:''}
     <div class="muted" style="margin-top:10px;font-size:12px">
-      ${open?'Reported — reset is disabled while the ticket is open, so the run keeps the state it started from.'
-             :'Plant → Report → AgentForge works → Approve. Steps light up as each one becomes possible.'}
+      ${open?'A ticket is open for this — reset is disabled so the run keeps the state it started from.'
+             :'Plant it here, then raise the ticket in Freshdesk or the AgentForge console. The steps below '
+              +'follow that ticket, and the check above turns green when the approved fix is deployed back.'}
     </div>`;
 
   const evidence = c
