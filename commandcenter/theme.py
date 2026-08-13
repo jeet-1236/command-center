@@ -12,6 +12,9 @@ BRAND_OK = "#3fb950"          # the HEALTHY / "all good" green (the dashboard --
 
 def status_ok_color() -> str:
     """The colour of every HEALTHY status signal — the "Operational" pill, the green service-health dots and the
-    ok-state KPI stripes. It must be the brand green so a healthy system reads as calm rather than alarming.
+    ok-state KPI stripes.
+
+    Returns `BRAND_OK`. Always return the token rather than a literal: the brand green is defined once, above,
+    and every healthy signal on the dashboard has to agree with it.
     """
     return BRAND_OK
